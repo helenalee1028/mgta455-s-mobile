@@ -53,6 +53,7 @@ s_mobile <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-201
 
 ```{r}
 library(tidyverse)
+library(caret)
 ```
 
 
@@ -86,6 +87,32 @@ revenue, mou, overage, months, custcare, dropvce
 train <- mutate_ext(train, .vars = vars(revenue, mou, overage, months, custcare, dropvce), .funs = funs(log), .ext = "_ln")
 ## transform variable
 test <- mutate_ext(test, .vars = vars(revenue, mou, overage, months, custcare, dropvce), .funs = funs(log), .ext = "_ln")
+```
+
+```{r}
+cm <- function(dat, vars){
+  
+  cm_df <- as.data.frame(matrix(NA, ncol = 4, nrow = length(vars)))
+  colnames(cm_df) <- c("var", "acc", "tpr", "auc")
+  
+  for (i in 1:length(vars)){
+    
+    var <- vars[i]
+    probs <- pull(dat, !!var)
+    resp <- pull(dat, "churn")
+    
+    pred <- ifelse(pull(dat, !!var) > 0.5, "yes", "no")
+    
+    acc <- sum(resp == pred)/nrow(dat)
+    tpr <- sum(resp == "yes" & pred == "yes")/sum(resp == "yes")
+    auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
+
+    cm_vec <- c(var, acc, tpr, auc)
+    cm_df[i,] <- cm_vec
+  }
+  return(cm_df)
+}
+
 ```
 
 stepwise&standardize
@@ -126,33 +153,119 @@ print(pred, n = 10)
 test <- store(test, pred, name = "pred_logit")
 ```
 
+Neural Network
 ```{r}
-acc <- function(dat, vars){
-  
-  cm_df <- as.data.frame(matrix(NA, ncol = 4, nrow = length(vars)))
-  colnames(cm_df) <- c("var", "acc", "tpr", "auc")
-  
-  for (i in 1:length(vars)){
-    
-    var <- vars[i]
-    probs <- pull(dat, !!var)
-    resp <- pull(dat, "churn")
-    
-    pred <- ifelse(pull(dat, !!var) > 0.5, "yes", "no")
-    
-    acc <- sum(resp == pred)/nrow(dat)
-    tpr <- sum(resp == "yes" & pred == "yes")/sum(resp == "yes")
-    auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
+## create vector storing paremeters. 
+size = seq(1,10,1)
+decay = c(0.1,0.5)
 
-    cm_vec <- c(var, acc, tpr, auc)
-    cm_df[i,] <- cm_vec
-  }
-  return(cm_df)
+## create grid search matrix
+params <- expand.grid(size,decay)
+value <- matrix(nrow = 20,ncol = 2)
+#params$auc <- NA
+colnames(params) <- c("size",'decay')
+
+auc <- c()
+accuracy <- c()
+for (i in 1:nrow(params)){
+ 
+  result <- nn(
+  train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "revenue", "mou", "overage", "roam", 
+    "conference", "uniqsubs", "custcare", "retcalls", "dropvce", 
+    "eqpdays", "refurb", "smartphone", "highcreditr", "mcycle", 
+    "car", "travel", "region", "occupation", "months"), 
+  lev = "yes", 
+  size = params[i,1], 
+  decay = params[i,2], 
+  seed = 1234
+)
+  pred <- predict(result, pred_data = test)
+  print(i)
+  test <- store(test, pred, name = name_)
+  
+  auc_ <- cm(test,name_)$auc
+  tpr_ <- cm(test,name_)$tpr
+  value[i,1] = auc_
+  value[i,2] = tpr_
+  colnames(value) = c('auc','tpr')
 }
+  params = cbind(data.frame(params),value)
+
+saveRDS(params, "nn_tune.rds")
 
 ```
 
+```{r} 
+nn_tune <-readRDS("nn_tune.rds")
+nn_tune %>% 
+  arrange(tpr)
+```
+When size = 4 and decay = 0.1, we get the highest tpr
 ```{r}
-acc(test,'pred_logit')
+nn_result <- nn(
+  train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "revenue", "mou", "overage", "roam", 
+    "conference", "uniqsubs", "custcare", "retcalls", "dropvce", 
+    "eqpdays", "refurb", "smartphone", "highcreditr", "mcycle", 
+    "car", "travel", "region", "occupation", "months"),  
+  lev = "yes", 
+  size = 4, 
+  decay = 0.1, 
+  seed = 1234
+)
+nn_pred <- predict(nn_result, pred_data = test)
+test <- store(test, nn_pred, name = "pred_nn")
+```
+
+```{r}
+cols = c('pred_logit','pred_nn')
+cm(test,cols)
+```
+
+```{r}
+## Get columns for gbm model
+train_gbm = train[c("churn", "changem", "mou", "overage", "roam", "uniqsubs", "retcalls", "dropvce", "eqpdays", "refurb", "highcreditr", "mcycle", "travel", "region", "occupation", "months")]
+test_gbm = test[c("churn", "changem", "mou", "overage", "roam", "uniqsubs", "retcalls", "dropvce", "eqpdays", "refurb", "highcreditr", "mcycle", "travel", "region", "occupation", "months")]
+```
+
+
+```{r eval=FALSE}
+# Using caret
+caretGrid <- expand.grid(interaction.depth = c(2,4,6), 
+                         n.trees = c(100,300),
+                         shrinkage = c(0.1,0.01),
+                         n.minobsinnode = c(20,40))
+trainControl <- trainControl(method="cv", number=6, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+set.seed(123)
+gbm_caret <- train(churn ~ ., 
+              data=train_gbm, 
+              distribution="bernoulli", 
+              method="gbm",
+              trControl=trainControl, verbose=FALSE,
+              tuneGrid=caretGrid, metric = "ROC")
+
+print(gbm_caret)
+gbm_caret$results
+gbm_caret$bestTune
+
+saveRDS(gbm_caret$bestTune, "gbm_best_tune_train1.rds")
+
+saveRDS(gbm_caret$results, "gbm_tune_train1.rds")
+```
+
+```{r}
+params1 <- readRDS("data/gbm_tune_train1.rds")
+params1 %>% 
+  arrange(desc(ROC)) %>% 
+  top_n(ROC, n = 10)
+
+best_tune1 <- readRDS("data/gbm_best_tune_train1.rds")
+best_tune1
 ```
 
