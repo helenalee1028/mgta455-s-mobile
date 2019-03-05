@@ -120,3 +120,39 @@ result <- logistic(
 summary(result, sum_check = "vif")
 ```
 
+```{r}
+pred <- predict(result, pred_data = test)
+print(pred, n = 10)
+test <- store(test, pred, name = "pred_logit")
+```
+
+```{r}
+acc <- function(dat, vars){
+  
+  cm_df <- as.data.frame(matrix(NA, ncol = 4, nrow = length(vars)))
+  colnames(cm_df) <- c("var", "acc", "tpr", "auc")
+  
+  for (i in 1:length(vars)){
+    
+    var <- vars[i]
+    probs <- pull(dat, !!var)
+    resp <- pull(dat, "churn")
+    
+    pred <- ifelse(pull(dat, !!var) > 0.5, "yes", "no")
+    
+    acc <- sum(resp == pred)/nrow(dat)
+    tpr <- sum(resp == "yes" & pred == "yes")/sum(resp == "yes")
+    auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
+
+    cm_vec <- c(var, acc, tpr, auc)
+    cm_df[i,] <- cm_vec
+  }
+  return(cm_df)
+}
+
+```
+
+```{r}
+acc(test,'pred_logit')
+```
+
