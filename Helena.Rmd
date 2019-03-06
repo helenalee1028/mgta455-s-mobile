@@ -386,8 +386,10 @@ table(eqpdays_c$churn,eqpdays_c$category3)
 
 sum(eqpdays_c$eqpdays<=100)/nrow(eqpdays_c)
 ```
-After several attempts, the high group has a raltively high churn rate, while low group has a relatively low churn rate. Medium group has the similar amount of people churning and staying.
+After several attempts, the "high" group has a raltively high churn rate, while "low" group has a relatively low churn rate. "Medium" group has the similar amount of people churning and staying.
 
+So for "high" group (i.e: eqpdays more than 700), we can offer a discount of 5% via 36 monthly payments including a new phone and the plan based on what the customer's choice.
+We assume that for each person, the incentive decrese the churning probability by 0.1 percent
 ```{r}
 result <- logistic(
   train_val, 
