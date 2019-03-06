@@ -374,17 +374,19 @@ eqpdays_c = eqpdays_c %>%
   mutate(category2 = ifelse(eqpdays<=150,'low',ifelse(eqpdays<=700,'medium','high')))
 
 table(eqpdays_c$churn,eqpdays_c$category2)
+
 sum(eqpdays_c$eqpdays>700)/nrow(eqpdays_c)
 ```
-
-
+option 3 (optimal):
 ```{r}
 eqpdays_c = eqpdays_c %>%
-  mutate(category = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=500,'medium','high')))
+  mutate(category3 = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=700,'medium','high')))
 
-table(eqpdays_c$churn,eqpdays_c$category)
+table(eqpdays_c$churn,eqpdays_c$category3)
+
+sum(eqpdays_c$eqpdays<=100)/nrow(eqpdays_c)
 ```
-
+After several attempts, the high group has a raltively high churn rate, while low group has a relatively low churn rate. Medium group has the similar amount of people churning and staying.
 
 ```{r}
 result <- logistic(
