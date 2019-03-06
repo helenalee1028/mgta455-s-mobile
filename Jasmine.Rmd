@@ -3,26 +3,55 @@ title: "Jasmine"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+Create data
+```{r}
+s_mobile <- mutate(s_mobile, cweight = ifelse(churn == 'yes', 1L, 49L))
+## filter and sort the dataset
+s_mobile_train <- s_mobile %>%
+  filter(training == 1)
+
+s_mobile_test <- s_mobile %>%
+  filter(training == 0)
 ```
 
-## R Markdown
+Logistic Regression with standardize.
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+result <- logistic(
+  s_mobile_train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "revenue", "mou", "overage", "roam", 
+    "conference", "months", "uniqsubs", "custcare", "retcalls", 
+    "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
+    "mcycle", "car", "travel", "region", "occupation"
+  ), 
+  lev = "yes", 
+  wts = "cweight", 
+  check = "standardize"
+)
+summary(result)
 ```
 
-## Including Plots
+Get rid of revenue, ? conference, custcare, car.
+Test conference: its p value is 0.098, so it is OK to get rid of it.
 
-You can also embed plots, for example:
+Re run model
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+result <- logistic(
+  s_mobile_train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "revenue", "mou", "overage", "roam", 
+    "conference", "months", "uniqsubs", "custcare", "retcalls", 
+    "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
+    "mcycle", "car", "travel", "region", "occupation"
+  ), 
+  lev = "yes", 
+  wts = "cweight", 
+  check = "standardize"
+)
+summary(result)
 ```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
