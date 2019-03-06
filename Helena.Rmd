@@ -54,6 +54,7 @@ s_mobile <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-201
 ```{r}
 library(tidyverse)
 library(caret)
+library(gbm)
 ```
 
 
@@ -147,6 +148,9 @@ result <- logistic(
 summary(result, sum_check = "vif")
 ```
 
+
+
+
 ```{r}
 pred <- predict(result, pred_data = test)
 print(pred, n = 10)
@@ -222,10 +226,7 @@ nn_pred <- predict(nn_result, pred_data = test)
 test <- store(test, nn_pred, name = "pred_nn")
 ```
 
-```{r}
-cols = c('pred_logit','pred_nn')
-cm(test,cols)
-```
+
 
 ```{r}
 ## Get columns for gbm model
@@ -260,12 +261,148 @@ saveRDS(gbm_caret$results, "gbm_tune_train1.rds")
 ```
 
 ```{r}
-params1 <- readRDS("data/gbm_tune_train1.rds")
+params1 <- readRDS("gbm_tune_train1.rds")
 params1 %>% 
   arrange(desc(ROC)) %>% 
   top_n(ROC, n = 10)
 
-best_tune1 <- readRDS("data/gbm_best_tune_train1.rds")
+best_tune1 <- readRDS("gbm_best_tune_train1.rds")
 best_tune1
 ```
+
+```{r}
+train_gbm$churn <- ifelse(train_gbm$churn  == "yes", 1, 0)
+test_gbm$churn <- ifelse(test_gbm$churn  == "yes", 1, 0)
+
+best_gbm <- gbm(formula = churn ~ . , 
+                  data = train_gbm, 
+                  distribution = "bernoulli", 
+                  interaction.depth = best_tune1[1,2],
+                  shrinkage = best_tune1[1,3],
+                  n.trees = best_tune1[1,1],
+                  n.minobsinnode = best_tune1[1,4])
+
+gbm_pred <- predict(best_gbm, newdata = test_gbm, type = "response", n.trees = best_tune1[1,1])
+test$"pred_gbm" <- gbm_pred
+```
+
+```{r}
+cols = c('pred_logit','pred_nn','pred_gbm')
+cm(test,cols)
+```
+
+
+## logistic final model
+
+```{r}
+s_mobile$mou_log <- log(s_mobile$mou + 1)
+train_val <- s_mobile %>%
+  filter(representative == 0)%>%
+  mutate(cweight = ifelse(churn == 'yes', 1L, 49L))
+
+representative <- s_mobile %>%
+  filter(representative == 1)
+```
+
+```{r}
+result <- logistic(
+  train_val, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "revenue", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", 
+    "eqpdays", "refurb",  "highcreditr", "mcycle", 
+   "travel", "region", "occupation", "mou_log"
+  ), 
+  lev = "yes", 
+  wts = "cweight", 
+  check = "standardize"
+)
+summary(result)
+pred <- predict(result, pred_data = representative)
+plot(result, plots = "coef", custom = FALSE)
+#print(pred, n = 10)
+representative <- store(representative, pred, name = "pred_logit")
+```
+
+
+```{r}
+coef_table  <- write.coeff(result, sort = TRUE,intercept = FALSE) %>%
+  select(label,OR,p.value,importance)
+
+coef_table
+
+coef_table %>%
+  ggplot(aes(x = fct_reorder(label, importance), y = importance))+
+  geom_bar(stat = 'identity') +
+  coord_flip()+
+  geom_hline(yintercept = 1,linetype = 'dotted',color = 'red') +
+  labs(x = 'variables')
+```
+
+eqpdays - statistically speaking, 2 standard deviations increase in eqpdays, equivalent to 
+`r round(2 * sd(train_val$eqpdays), 2)` days, would increase the odds of churning by 80.6%, keeping everything else constant. This is probably because that the longer the customer owning the current handset, the more the customer would desire to change to a new handset. As it is common that instead of buying a new handset from a mobile retailer, people may go to a carrier and get a much cheaper price of the same handset with signing several years of contract with the carrier. So the probability of churning increases when a customer wants to change to a new handset.
+
+explore the feature "eqpdays":
+```{r}
+summary(train_val$eqpdays)
+
+visualize(
+  s_mobile, 
+  xvar = "eqpdays", 
+  type = "dist", 
+  custom = FALSE
+)
+
+eqpdays_c = train_val %>%
+  select(churn,eqpdays)
+```
+
+option 1:
+```{r}
+eqpdays_c = eqpdays_c %>%
+  mutate(category1 = ifelse(eqpdays<=150,'low',ifelse(eqpdays<=500,'medium','high')))
+
+table(eqpdays_c$churn,eqpdays_c$category1)
+sum(eqpdays_c$eqpdays>500)/nrow(eqpdays_c)
+
+```
+
+option 2 (better):
+```{r}
+eqpdays_c = eqpdays_c %>%
+  mutate(category2 = ifelse(eqpdays<=150,'low',ifelse(eqpdays<=700,'medium','high')))
+
+table(eqpdays_c$churn,eqpdays_c$category2)
+
+sum(eqpdays_c$eqpdays>700)/nrow(eqpdays_c)
+```
+option 3 (optimal):
+```{r}
+eqpdays_c = eqpdays_c %>%
+  mutate(category3 = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=700,'medium','high')))
+
+table(eqpdays_c$churn,eqpdays_c$category3)
+
+sum(eqpdays_c$eqpdays<=100)/nrow(eqpdays_c)
+```
+After several attempts, the high group has a raltively high churn rate, while low group has a relatively low churn rate. Medium group has the similar amount of people churning and staying.
+
+```{r}
+result <- logistic(
+  train_val, 
+  rvar = "churn", 
+  evar = c(
+    "eqpdays"
+  ), 
+  lev = "yes", 
+  check = c("standardize")
+)
+summary(result)
+```
+
+
+
+
+possible way of reducing the churning rate regarding feature "eqpdays":
 
