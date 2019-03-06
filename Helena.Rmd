@@ -340,6 +340,8 @@ coef_table %>%
   labs(x = 'variables')
 ```
 
+eqpdays - statistically speaking, 2 standard deviations increase in eqpdays, equivalent to 
+`r round(2 * sd(train_val$eqpdays), 2)` days, would increase the odds of churning by 80.6%, keeping everything else constant. This is probably because that the longer the customer owning the current handset, the more the customer would desire to change to a new handset. As it is common that instead of buying a new handset from a mobile retailer, people may go to a carrier and get a much cheaper price of the same handset with signing several years of contract with the carrier. So the probability of churning increases when a customer wants to change to a new handset.
 
-eqpdays - statistically speaking, 2 standard deviations increase in overage, equivalent to 
-`r round(2 * sd(train_val$eqpdays), 2)` minutes, would increase the odds of churning by 80。6%, keeping everything else constant.
+The possible way of reducing the churning rate regarding this feature is to 
+
