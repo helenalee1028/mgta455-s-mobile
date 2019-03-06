@@ -148,6 +148,9 @@ result <- logistic(
 summary(result, sum_check = "vif")
 ```
 
+
+
+
 ```{r}
 pred <- predict(result, pred_data = test)
 print(pred, n = 10)
@@ -287,3 +290,56 @@ test$"pred_gbm" <- gbm_pred
 cols = c('pred_logit','pred_nn','pred_gbm')
 cm(test,cols)
 ```
+
+
+## logistic final model
+
+```{r}
+s_mobile$mou_log <- log(s_mobile$mou + 1)
+train_val <- s_mobile %>%
+  filter(representative == 0)%>%
+  mutate(cweight = ifelse(churn == 'yes', 1L, 49L))
+
+representative <- s_mobile %>%
+  filter(representative == 1)
+```
+
+```{r}
+result <- logistic(
+  train_val, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "revenue", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", 
+    "eqpdays", "refurb",  "highcreditr", "mcycle", 
+   "travel", "region", "occupation", "mou_log"
+  ), 
+  lev = "yes", 
+  wts = "cweight", 
+  check = "standardize"
+)
+summary(result)
+pred <- predict(result, pred_data = representative)
+plot(result, plots = "coef", custom = FALSE)
+#print(pred, n = 10)
+representative <- store(representative, pred, name = "pred_logit")
+```
+
+
+```{r}
+coef_table  <- write.coeff(result, sort = TRUE,intercept = FALSE) %>%
+  select(label,OR,p.value,importance)
+
+coef_table
+
+coef_table %>%
+  ggplot(aes(x = fct_reorder(label, importance), y = importance))+
+  geom_bar(stat = 'identity') +
+  coord_flip()+
+  geom_hline(yintercept = 1,linetype = 'dotted',color = 'red') +
+  labs(x = 'variables')
+```
+
+
+eqpdays - statistically speaking, 2 standard deviations increase in overage, equivalent to 
+`r round(2 * sd(train_val$eqpdays), 2)` minutes, would increase the odds of churning by 80。6%, keeping everything else constant.
