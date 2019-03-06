@@ -5,7 +5,9 @@ output: html_document
 
 Create data
 ```{r}
-s_mobile <- mutate(s_mobile, cweight = ifelse(churn == 'yes', 1L, 49L))
+s_mobile$mou_ln <- log(s_mobile$mou + 1)
+s_mobile$revenue_ln <- log(s_mobile$revenue + 1)
+#s_mobile <- mutate(s_mobile, cweight = ifelse(churn == 'yes', 1L, 49L))
 ## filter and sort the dataset
 s_mobile_train <- s_mobile %>%
   filter(training == 1)
@@ -14,44 +16,32 @@ s_mobile_test <- s_mobile %>%
   filter(training == 0)
 ```
 
-Logistic Regression with standardize.
 
 
-```{r}
-result <- logistic(
-  s_mobile_train, 
-  rvar = "churn", 
-  evar = c(
-    "changer", "changem", "revenue", "mou", "overage", "roam", 
-    "conference", "months", "uniqsubs", "custcare", "retcalls", 
-    "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
-    "mcycle", "car", "travel", "region", "occupation"
-  ), 
-  lev = "yes", 
-  wts = "cweight", 
-  check = "standardize"
-)
-summary(result)
-```
-
-Get rid of revenue, ? conference, custcare, car.
-Test conference: its p value is 0.098, so it is OK to get rid of it.
-
-Re run model
 
 ```{r}
 result <- logistic(
   s_mobile_train, 
   rvar = "churn", 
   evar = c(
-    "changer", "changem", "revenue", "mou", "overage", "roam", 
-    "conference", "months", "uniqsubs", "custcare", "retcalls", 
-    "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
-    "mcycle", "car", "travel", "region", "occupation"
+    "changer", "changem", "revenue", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", 
+    "eqpdays", "refurb",  "highcreditr", "mcycle", 
+   "travel", "region", "occupation", "mou_ln"
   ), 
   lev = "yes", 
-  wts = "cweight", 
   check = "standardize"
 )
 summary(result)
+pred <- predict(result, pred_data = s_mobile_test)
+plot(result, plots = "coef", custom = FALSE)
+#print(pred, n = 10)
+s_mobile_test <- store(s_mobile_test, pred, name = "pred_logit")
 ```
+```{r}
+acc(s_mobile_test,'pred_logit')
+
+```
+
+
+
