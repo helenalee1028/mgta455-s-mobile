@@ -53,7 +53,62 @@ coef_table %>%
 
 ```
 
+## Question 2
 
-central singapore：merlion park, singapore landmerk and main tourist attraction, located near one fullerton (浮尔顿酒店)， near central business district.
+Key Driver Analysis:
 
+1. Occupation
+
+* Retired - statistically speaking, odds of retired customer churning decrease by 82% compared to other customers, keeping everything else constant. This is probably because senior customers tend to have less expectation on mobile service, thus they are less picky. They are also reluctant to acccept new things and they won't bother calling to leave.
+
+* Student - statistically speaking, odds of student customer churning increase by 89% compared to other customers, keeping everything else constant. This is probably because students have relatively low demand in mobile service and they have less stable financial support, which both make them more likely to churn.
+
+* Professional - statistically speaking, odds of professional customer churning increase by 42% compared to other customers, keeping everything else constant. This is probably because prefessionals are really comfortable in accepting new changes and they have high demand in a good quality mobile service. Once their need is unsatisfied, they tend to churn and switch to other providers.
+
+
+2. Region
+
+* SW,NE,SE,NW - statistically speaking, odds of churning of customers living in southwest, northeast, southeast, and northwest Singapore decrease by about 35% compared to customers from central Singapore, keeping everything else constant. Central singapore is the main metropolitan region and central business district. Many famous landmark is located there, such as merlion park, which has made it the most expensive area in singapore. Thus, we can assume that residents in central singapore tend to have higher standard on mobile services and would more likely to switch to something better if their current need is not met.
+
+## Question 3
+
+Actions/offers/incentives
+
+* Open more stores in central Singapore to increase service level, such as providing help with account, and making changing plan more flexible and easy.
+
+* Provide customized plans specially for students and professionals to meet their needs. For example, include more data and less messaegs in students' plans. 
+
+
+## Question 4
+
+```{r}
+df <- representative %>%
+  group_by(region) %>%
+  summarize(count = n(),
+            Churn = sum(churn == 'yes'),
+            left = count - Churn,
+            per = sum(churn == 'yes') / count)
+df
+```
+
+* Test on opening new store in CS (central singapore). 
+
+Among the 5977 CS customers in the representative data set, 2.8% of them churned in the past 30 days. Our test would be, open a new branch in CS and wait for another month. We then check precentage of people churning among the left 5808 people. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate.
+
+Result assumption: we assume that with opening one more store, the churn rate for CS resident would go down by 10%.
+
+* Test on create customized planning for students and professionals
+
+```{r}
+representative %>%
+  group_by(occupation) %>%
+  summarize(count = n(),
+            Churn = sum(churn == 'yes'),
+            left = count - Churn,
+            per = sum(churn == 'yes') / count)
+```
+
+Test process would be, send promotional email to students and professionals about new customized plans, and get the number of people actually accept and switch plans. Wait another 4 months to see churn rate among them. The reason to wait 4 months is people tend to need more time to adapt to new plan and figure out whether they want to stay. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate for students and professionals respectively.
+
+Result assumption: we assume that with marketing customized plans, the churn rate for students and professionals would go down by 10% respectively.
 
