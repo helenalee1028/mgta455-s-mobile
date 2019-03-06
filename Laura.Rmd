@@ -31,7 +31,6 @@ library(forecast)
 library(ModelMetrics)
 ```
 
-
 ```{r}
 # log transformation for 'mou' variable
 s_mobile$mou_log <- log(s_mobile$mou + 1)
@@ -48,98 +47,97 @@ representative <- s_mobile %>%
 ```
 
 ### Question 1
+#### Logistic Regression
 
-```{r}
-# logistic regression, used for prediction
+We hand picked the variables whose coefficients are statistically significant at 10% level. Below is model summary. 
 
-logit_model <- glm(churn == "yes" ~ changer+changem+mou_log+overage+roam+
-                     conference+months+uniqsubs+retcalls+dropvce+eqpdays+
-                     refurb+highcreditr+mcycle+travel+region+occupation, 
-                   data = train, family = "binomial")
-
-summary(logit_model)
-```
-
-```{r}
-# define function to scale by 2 standard deviations
-
-scale_two <- function(series){
-  std <- sd(series, na.rm = TRUE)
-  avg <- mean(series, na.rm = TRUE)
-  series <- (series-avg)/std
-  return(series)
-}
-
-# determine variable importance
-scaled_vars <- train %>% select_if(is.numeric)
-scaled_vars <- apply(scaled_vars,2,scale_two)
-
-train_s <- train %>% 
-  select_if(is.factor) %>% 
-  cbind(scaled_vars)
-
-
-logit_model_s <- glm(churn == "yes" ~ changer+changem+mou_log+overage+roam+
-                     conference+months+uniqsubs+retcalls+dropvce+eqpdays+
-                     refurb+highcreditr+mcycle+travel+region+occupation, 
-                   data = train_s, family = "binomial")
-
-summary(logit_model_s)
-
-coef_list <- logit_model_s$coefficients *2
-coef_list
-
-odds_ratio <- exp(coef_list)
-odds_ratio
-  
-```
-
-### Question 2
-
-```{r fig.width = 7, fig.height = 8.18, dpi = 144}
-result <- logistic(
+```{r warning=FALSE}
+logit_result <- logistic(
   train, 
   rvar = "churn", 
   evar = c(
     "changer", "changem", "overage", "roam", "conference", 
     "months", "uniqsubs", "retcalls", "dropvce", "eqpdays", 
     "refurb", "highcreditr", "mcycle", "travel", "region", "occupation", 
-    "mou_log"
+    "mou_log", "revenue"
   ), 
   lev = "yes", 
   check = "standardize"
 )
-plot(result, plots = "coef", custom = FALSE)
 
+summary(logit_result)
+
+
+# predict on validation data for further comparison
+
+pred_logit <- predict(logit_result, pred_data = validation)$Prediction
 ```
 
-```{r}
-coef_table <- result %>% write.coeff(intercept = FALSE) %>%
-  format_df(dec = 4) %>% 
-  select(label, OR, coefficient, std.error, z.value, p.value) %>%
-  mutate_at(vars(label), funs(as.factor)) %>% 
-  mutate_at(vars(-label), funs(as.numeric)) %>% 
-  mutate(importance = ifelse(OR >1, OR, 1.0/OR)) %>% 
-  arrange(desc(importance))
+#### Neural Network
 
-coef_table
-```
+In this part, we tune neural network model by iterating over size 3 to 10, with decay rate from 0.1 to 0.8. The highest validation AUC is achieved by size 10 and decay rate of 0.1. 
 
-```{r}
-coef_table %>% 
-  ggplot(aes(x = fct_reorder(label, importance), y = importance)) + 
-  geom_bar(stat = "identity") +
-  coord_flip() +
-  geom_hline(yintercept = 1.0, linetype = 'dotted', color = 'red')+
-  labs(main = "Variable Importance in Churn Rate Prediction", 
-       x = "variables",
-       y = 'importance')
+```{r echo = FALSE}
+### tune neural network
+params <- expand.grid(size = seq(3,10,1), decay = seq(0.1, 0.8, 0.1))
+params$auc <- NA
+
+real_churn <- ifelse(validation$churn == "yes", 1, 0)
+for (i in 1:nrow(params)){
+  result <- nn(
+    train, 
+    rvar = "churn", 
+    evar = c(
+      "changer", "changem", "revenue", "mou", "overage", "roam", 
+      "conference", "months", "uniqsubs", "custcare", "retcalls", 
+      "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
+      "mcycle", "car", "travel", "region", "occupation"
+    ), 
+    lev = "yes", 
+    size = params[i,1], 
+    decay = params[i,2], 
+    seed = 1234
+  )
   
+  pred <- predict(result, pred_data = validation)$Prediction
+  
+  auc <- ModelMetrics::auc(real_churn, pred)
+  params[i,3] <- auc
+  
+}
+
+saveRDS(params, 'nn_tune.rds')
 ```
 
-### Question 3
+```{r}
+nn_tune1 <- readRDS("~/git/rsm-mgta455-s-mobile/nn_tune1.rds")
+pos <- which.max(nn_tune1$auc)
+
+result <- nn(
+    train, 
+    rvar = "churn", 
+    evar = c(
+      "changer", "changem", "revenue", "mou", "overage", "roam", 
+      "conference", "months", "uniqsubs", "custcare", "retcalls", 
+      "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
+      "mcycle", "car", "travel", "region", "occupation"
+    ), 
+    lev = "yes", 
+    size = params[pos,1], 
+    decay = params[pos,2], 
+    seed = 1234
+  )
+
+pred_nn <- predict(result, pred_data = validation)$Prediction
+```
+
+#### Evaluate Models
+
+Comparing prediction accuracy, AUC and true positive rate, we can see that neural network outperforms logistic regression in terms of accuracy and AUC, but underperforms in true positive rate. Since the performance difference isn't substantial, and the key purpose of our analysis is to locate the main drivers for churn rate, we'll use logistic regression for our further analysis.  
 
 ```{r}
+
+# define evaluation function
 acc <- function(dat, vars){
   
   cm_df <- as.data.frame(matrix(NA, ncol = 4, nrow = length(vars)))
@@ -159,68 +157,120 @@ acc <- function(dat, vars){
 
     cm_vec <- c(var, acc, tpr, auc)
     cm_df[i,] <- cm_vec
+    
+    cm_df[2:4] <- lapply(cm_df[2:4], as.numeric)
   }
   return(cm_df)
 }
-```
 
-
-```{r}
-# predict on validation dataset and calcluate AUC and accuracy
-
-pred_validation <- predict(logit_model, newdata = validation, type = "response")
-pred_class <- ifelse(pred_validation > 0.5, "yes", "no")
-true_churn <- ifelse(validation$churn == "yes", 1, 0)
-
-ModelMetrics::auc(true_churn, pred_validation)
-```
-
-### Model Comparison to be done
-```{r}
-eval_preds <- validation %>% 
+vars <- c("pred_logit", "pred_nn")
+eval_df <- validation %>% 
   select(churn) %>% 
-  cbind(pred_validation)
+  mutate(pred_logit = pred_logit, pred_nn = pred_nn)
 
-vars <- c("pred_validation")
-acc(eval_preds, vars)
+acc(eval_df, vars)
+```
 
+### Question 2 - Key Driver Analysis
+
+After choosing the suitable model, we train on the entire dataset (training + validation) and extend key drivers analysis. 
+
+```{r fig.width = 7, fig.height = 8.18, dpi = 144}
+
+entire_train <- rbind(train, validation)
+result <- logistic(
+  entire_train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", "eqpdays", 
+    "refurb", "highcreditr", "mcycle", "travel", "region", "occupation", 
+    "mou_log", "revenue"
+  ), 
+  lev = "yes", 
+  check = "standardize"
+)
+plot(result, plots = "coef", custom = FALSE)
 
 ```
 
-### Question 3 & 4
+```{r}
+coef_table <- result %>% write.coeff(intercept = FALSE) %>%
+  format_df(dec = 4) %>% 
+  select(label, OR, coefficient, std.error, z.value, p.value) %>%
+  mutate_at(vars(label), list(as.factor)) %>% 
+  mutate_at(vars(-label), list(as.numeric)) %>% 
+  mutate(importance = ifelse(OR >1, OR, 1.0/OR)) %>% 
+  arrange(desc(importance))
+
+coef_table
+```
 
 ```{r}
-mean(representative$churn == "yes")
+coef_table %>% 
+  ggplot(aes(x = fct_reorder(label, importance), y = importance)) + 
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_hline(yintercept = 1.0, linetype = 'dotted', color = 'red')+
+  labs(main = "Variable Importance in Churn Rate Prediction", 
+       x = "variables",
+       y = 'importance')
+  
+```
 
-pred_prob <- predict(logit_model, newdata = representative, 
-                     type = "response")
+Key Driver Analysis:
+
+1. overage - statistically speaking, 2 standard deviations increase in overage, equivalent to 
+`r round(2 * sd(entire_train$overage), 2)` minutes, would increase the odds of churning by 92%, keeping everything else constant. This is probably because customers find the current plan unable to satisfy their needs and hence considering switching to other providers. 
+
+2. mou_log - similarly, 2 standard deviations increase in log transformed 'mean monthly minutes of use', which is equivalent to around 18 minutes, would decrease the odds of customer churning by approximately 40%. 
+
+
+### Question 3 - Proactive strategy proposals
+
+Based on drivers analysis, we come up with below actions and incentives for proactive churn management. 
+
+1. Promote plans with larger data usage to customers whose consumption constantly exceed monthly limit;
+
+
+
+### Question 4 - Quantify the impact on churn probability
+
+```{r}
+# use model without standard deviations for prediction
+logit_model <- glm(churn == "yes" ~ changer+changem+mou_log+overage+roam+
+                     conference+months+uniqsubs+retcalls+dropvce+eqpdays+
+                     refurb+highcreditr+mcycle+travel+region+occupation+revenue, 
+                   data = entire_train, family = "binomial")
 
 ## adjust to actual churn rate of 2%
-
 adjust_prob <- function(pred_prob){
   probs_adj <- pred_prob / (pred_prob + (1 - pred_prob)*0.98/0.02)
   probs_adj
 }
 
+pred_prob <- predict(logit_model, newdata = representative, 
+                     type = "response")
+pred_prob_adj <- adjust_prob(pred_prob) # adjust to actual level
+baseline <- mean(pred_prob_adj)
+
 
 pred_prob_adj <- adjust_prob(pred_prob)
 print(paste0("The churn rate without proactive incentive is ", format_nr(mean(pred_prob_adj), perc = T), "."))
 
-```
-
-```{r}
+# we target to reduce below median overage without incurring substantial rise in cost
+target_usage <- median(entire_train$overage)
 representative_overage <- representative %>% 
-  mutate(overage = ifelse(overage > 31, 31, overage))
-
+  mutate(overage = ifelse(overage > target_usage, target_usage, overage))
 pred_overage <- predict(logit_model, newdata = representative_overage, type = "response") %>% 
   adjust_prob()
 
-mean(pred_overage)
-
-# but if we manage to cut overage below medians, the revenues will be cut as well. how to incorporate this information?
-
+overage_churn <- mean(pred_overage)
 
 ```
+
+1. The baseline churn rate is `r format_nr(baseline,perc = T)`. If we can manage to reduce overage below 43 minutes, which is the current median overage time, we can reduce the average churn rate to `r format_nr(overage_churn, perc = T)`. The reason why we are not seeking to eliminate overage altogether is that it may incur high maintenance cost to keep up with the increased data flow. For example, if we offer unlimited plans, customers may abuse data usage and S-mobile may need extra capital in infrastructure maintenance to keep up with the increased service request. 
+
 
 ```{r}
 hist(representative$eqpdays)
@@ -236,13 +286,51 @@ pred_eqpdays <- predict(logit_model, newdata = representative_equip, type = "res
 mean(pred_eqpdays)
 ```
 
+### Question 5 - Customer Target
+
 
 ### Question 6 - Evaluate the economics
 
-### Logging all variables
+To evaluate the economic impact on 5-year profitability, we made following assumptions for customer lifetime value calculation. 
+
+1. Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests;
+
+
+2. Annual Discount Rate - we assume it to be 12%, which is a reasonable assumption for a company's annual rate of return;
+
+3. Revenue arrives at the end of each month;
+
+4. Customers cancel their plans at midst of an month, which isn't effective til the end of the month. 
+
 ```{r}
-s_mobile_log <- s_mobile %>% 
-  mutate_if(is.integer, funs(log1p))
+# initial setup for CLV calculation
+n <- 5 * 12
+discount <- 0.12
+
+revenue <- rep(mean(representative$revenue), n)
+fixed_cost <- rep(8, n)
+variable_cost <- 0.4 * revenue
+
+monthly_discount <- (1 + discount)^(1/12) - 1
+
+# profits before churn
+profits <- revenue - fixed_cost - variable_cost 
+
+# profits adjusted for the churn
+churn <- rep(1, n)
+for (i in 1:(length(churn) - 1)){
+  churn[i+1] <- churn[i] * (1 - baseline)
+}
+
+profits_churn <- profits * churn
+
+# present value 
+discount_period <- c(1:n)
+
+profits_pv <- profits_churn/((1 + monthly_discount)^discount_period)
+
+clv_baseline <- cumsum(profits_pv)
+clv_baseline[60]
 ```
 
-
+For an average customer, the monthly revenue is expected to be `r format_nr(mean(representative$revenue),'$', dec = 2)`. 
