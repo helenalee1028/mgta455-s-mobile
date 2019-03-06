@@ -1,0 +1,248 @@
+---
+title: "Laura"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(
+  width = 250,
+  scipen = 100,
+  max.print = 5000,
+  stringsAsFactors = FALSE,
+  digits = 6
+)
+
+## load radiant packages if neededi
+if (!exists("r_environment")) library(radiant)
+```
+
+```{r}
+## Loading the data from Dropbox
+s_mobile <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/s_mobile.rds"))
+```
+
+```{r include = FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(forecast)
+library(ModelMetrics)
+```
+
+
+```{r}
+# log transformation for 'mou' variable
+s_mobile$mou_log <- log(s_mobile$mou + 1)
+
+# split into training, validation and representative data
+train <- s_mobile %>% 
+  filter(training == 1)
+
+validation <- s_mobile %>% 
+  filter(training == 0)
+
+representative <- s_mobile %>% 
+  filter(representative == 1)
+```
+
+### Question 1
+
+```{r}
+# logistic regression, used for prediction
+
+logit_model <- glm(churn == "yes" ~ changer+changem+mou_log+overage+roam+
+                     conference+months+uniqsubs+retcalls+dropvce+eqpdays+
+                     refurb+highcreditr+mcycle+travel+region+occupation, 
+                   data = train, family = "binomial")
+
+summary(logit_model)
+```
+
+```{r}
+# define function to scale by 2 standard deviations
+
+scale_two <- function(series){
+  std <- sd(series, na.rm = TRUE)
+  avg <- mean(series, na.rm = TRUE)
+  series <- (series-avg)/std
+  return(series)
+}
+
+# determine variable importance
+scaled_vars <- train %>% select_if(is.numeric)
+scaled_vars <- apply(scaled_vars,2,scale_two)
+
+train_s <- train %>% 
+  select_if(is.factor) %>% 
+  cbind(scaled_vars)
+
+
+logit_model_s <- glm(churn == "yes" ~ changer+changem+mou_log+overage+roam+
+                     conference+months+uniqsubs+retcalls+dropvce+eqpdays+
+                     refurb+highcreditr+mcycle+travel+region+occupation, 
+                   data = train_s, family = "binomial")
+
+summary(logit_model_s)
+
+coef_list <- logit_model_s$coefficients *2
+coef_list
+
+odds_ratio <- exp(coef_list)
+odds_ratio
+  
+```
+
+### Question 2
+
+```{r fig.width = 7, fig.height = 8.18, dpi = 144}
+result <- logistic(
+  train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", "eqpdays", 
+    "refurb", "highcreditr", "mcycle", "travel", "region", "occupation", 
+    "mou_log"
+  ), 
+  lev = "yes", 
+  check = "standardize"
+)
+plot(result, plots = "coef", custom = FALSE)
+
+```
+
+```{r}
+coef_table <- result %>% write.coeff(intercept = FALSE) %>%
+  format_df(dec = 4) %>% 
+  select(label, OR, coefficient, std.error, z.value, p.value) %>%
+  mutate_at(vars(label), funs(as.factor)) %>% 
+  mutate_at(vars(-label), funs(as.numeric)) %>% 
+  mutate(importance = ifelse(OR >1, OR, 1.0/OR)) %>% 
+  arrange(desc(importance))
+
+coef_table
+```
+
+```{r}
+coef_table %>% 
+  ggplot(aes(x = fct_reorder(label, importance), y = importance)) + 
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_hline(yintercept = 1.0, linetype = 'dotted', color = 'red')+
+  labs(main = "Variable Importance in Churn Rate Prediction", 
+       x = "variables",
+       y = 'importance')
+  
+```
+
+### Question 3
+
+```{r}
+acc <- function(dat, vars){
+  
+  cm_df <- as.data.frame(matrix(NA, ncol = 4, nrow = length(vars)))
+  colnames(cm_df) <- c("var", "acc", "tpr", "auc")
+  
+  for (i in 1:length(vars)){
+    
+    var <- vars[i]
+    probs <- pull(dat, !!var)
+    churn <- pull(dat, "churn")
+    
+    pred <- ifelse(pull(dat, !!var) > 0.5, "yes", "no")
+    
+    acc <- sum(churn == pred)/nrow(dat)
+    tpr <- sum(churn == "yes" & pred == "yes")/sum(churn == "yes")
+    auc <- ModelMetrics::auc(ifelse(churn=="yes",1,0), probs)
+
+    cm_vec <- c(var, acc, tpr, auc)
+    cm_df[i,] <- cm_vec
+  }
+  return(cm_df)
+}
+```
+
+
+```{r}
+# predict on validation dataset and calcluate AUC and accuracy
+
+pred_validation <- predict(logit_model, newdata = validation, type = "response")
+pred_class <- ifelse(pred_validation > 0.5, "yes", "no")
+true_churn <- ifelse(validation$churn == "yes", 1, 0)
+
+ModelMetrics::auc(true_churn, pred_validation)
+```
+
+### Model Comparison to be done
+```{r}
+eval_preds <- validation %>% 
+  select(churn) %>% 
+  cbind(pred_validation)
+
+vars <- c("pred_validation")
+acc(eval_preds, vars)
+
+
+```
+
+### Question 3 & 4
+
+```{r}
+mean(representative$churn == "yes")
+
+pred_prob <- predict(logit_model, newdata = representative, 
+                     type = "response")
+
+## adjust to actual churn rate of 2%
+
+adjust_prob <- function(pred_prob){
+  probs_adj <- pred_prob / (pred_prob + (1 - pred_prob)*0.98/0.02)
+  probs_adj
+}
+
+
+pred_prob_adj <- adjust_prob(pred_prob)
+print(paste0("The churn rate without proactive incentive is ", format_nr(mean(pred_prob_adj), perc = T), "."))
+
+```
+
+```{r}
+representative_overage <- representative %>% 
+  mutate(overage = ifelse(overage > 31, 31, overage))
+
+pred_overage <- predict(logit_model, newdata = representative_overage, type = "response") %>% 
+  adjust_prob()
+
+mean(pred_overage)
+
+# but if we manage to cut overage below medians, the revenues will be cut as well. how to incorporate this information?
+
+
+```
+
+```{r}
+hist(representative$eqpdays)
+
+# can we cut within one year
+
+representative_equip <- representative %>% 
+  mutate(eqpdays = ifelse(eqpdays > 365, 365, eqpdays))
+
+pred_eqpdays <- predict(logit_model, newdata = representative_equip, type = "response") %>% 
+  adjust_prob()
+
+mean(pred_eqpdays)
+```
+
+
+### Question 6 - Evaluate the economics
+
+### Logging all variables
+```{r}
+s_mobile_log <- s_mobile %>% 
+  mutate_if(is.integer, funs(log1p))
+```
+
+
