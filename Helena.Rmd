@@ -343,5 +343,64 @@ coef_table %>%
 eqpdays - statistically speaking, 2 standard deviations increase in eqpdays, equivalent to 
 `r round(2 * sd(train_val$eqpdays), 2)` days, would increase the odds of churning by 80.6%, keeping everything else constant. This is probably because that the longer the customer owning the current handset, the more the customer would desire to change to a new handset. As it is common that instead of buying a new handset from a mobile retailer, people may go to a carrier and get a much cheaper price of the same handset with signing several years of contract with the carrier. So the probability of churning increases when a customer wants to change to a new handset.
 
-The possible way of reducing the churning rate regarding this feature is to 
+explore the feature "eqpdays":
+```{r}
+summary(train_val$eqpdays)
+
+visualize(
+  s_mobile, 
+  xvar = "eqpdays", 
+  type = "dist", 
+  custom = FALSE
+)
+
+eqpdays_c = train_val %>%
+  select(churn,eqpdays)
+```
+
+option 1:
+```{r}
+eqpdays_c = eqpdays_c %>%
+  mutate(category1 = ifelse(eqpdays<=150,'low',ifelse(eqpdays<=500,'medium','high')))
+
+table(eqpdays_c$churn,eqpdays_c$category1)
+sum(eqpdays_c$eqpdays>500)/nrow(eqpdays_c)
+
+```
+
+option 2 (better):
+```{r}
+eqpdays_c = eqpdays_c %>%
+  mutate(category2 = ifelse(eqpdays<=150,'low',ifelse(eqpdays<=700,'medium','high')))
+
+table(eqpdays_c$churn,eqpdays_c$category2)
+sum(eqpdays_c$eqpdays>700)/nrow(eqpdays_c)
+```
+
+
+```{r}
+eqpdays_c = eqpdays_c %>%
+  mutate(category = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=500,'medium','high')))
+
+table(eqpdays_c$churn,eqpdays_c$category)
+```
+
+
+```{r}
+result <- logistic(
+  train_val, 
+  rvar = "churn", 
+  evar = c(
+    "eqpdays"
+  ), 
+  lev = "yes", 
+  check = c("standardize")
+)
+summary(result)
+```
+
+
+
+
+possible way of reducing the churning rate regarding feature "eqpdays":
 
