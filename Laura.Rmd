@@ -77,7 +77,7 @@ pred_logit <- predict(logit_result, pred_data = validation)$Prediction
 
 In this part, we tune neural network model by iterating over size 3 to 10, with decay rate from 0.1 to 0.8. The highest validation AUC is achieved by size 10 and decay rate of 0.1. 
 
-```{r echo = FALSE}
+```{r eval = FALSE}
 ### tune neural network
 params <- expand.grid(size = seq(3,10,1), decay = seq(0.1, 0.8, 0.1))
 params$auc <- NA
@@ -110,7 +110,7 @@ saveRDS(params, 'nn_tune.rds')
 ```
 
 ```{r}
-nn_tune1 <- readRDS("~/git/rsm-mgta455-s-mobile/nn_tune1.rds")
+nn_tune1 <- readRDS("nn_tune1.rds")
 pos <- which.max(nn_tune1$auc)
 
 result <- nn(
@@ -123,8 +123,8 @@ result <- nn(
       "mcycle", "car", "travel", "region", "occupation"
     ), 
     lev = "yes", 
-    size = params[pos,1], 
-    decay = params[pos,2], 
+    size = nn_tune1[pos,1], 
+    decay = nn_tune1[pos,2], 
     seed = 1234
   )
 
@@ -136,7 +136,6 @@ pred_nn <- predict(result, pred_data = validation)$Prediction
 Comparing prediction accuracy, AUC and true positive rate, we can see that neural network outperforms logistic regression in terms of accuracy and AUC, but underperforms in true positive rate. Since the performance difference isn't substantial, and the key purpose of our analysis is to locate the main drivers for churn rate, we'll use logistic regression for our further analysis.  
 
 ```{r}
-
 # define evaluation function
 acc <- function(dat, vars){
   
@@ -293,8 +292,7 @@ mean(pred_eqpdays)
 
 To evaluate the economic impact on 5-year profitability, we made following assumptions for customer lifetime value calculation. 
 
-1. Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests;
-
+1. Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests and we assume a cost rate of 40%;
 
 2. Annual Discount Rate - we assume it to be 12%, which is a reasonable assumption for a company's annual rate of return;
 
@@ -306,31 +304,54 @@ To evaluate the economic impact on 5-year profitability, we made following assum
 # initial setup for CLV calculation
 n <- 5 * 12
 discount <- 0.12
+discount_period <- c(1:n)
 
 revenue <- rep(mean(representative$revenue), n)
 fixed_cost <- rep(8, n)
-variable_cost <- 0.4 * revenue
+initial_variable <- 0.4
 
 monthly_discount <- (1 + discount)^(1/12) - 1
 
-# profits before churn
-profits <- revenue - fixed_cost - variable_cost 
 
-# profits adjusted for the churn
-churn <- rep(1, n)
-for (i in 1:(length(churn) - 1)){
-  churn[i+1] <- churn[i] * (1 - baseline)
+# define clv calculation function
+cal_clv <- function(churn_rate, cost_rate){
+  total_cost <- fixed_cost + cost_rate * revenue
+  profits <- revenue - total_cost
+  
+  remain_customer <- rep(1,n)
+  for (i in 1:(length(remain_customer)-1)){
+    remain_customer[i+1] <- remain_customer[i] * (1 - churn_rate)
+  }
+  
+  profits_churn <- profits*remain_customer
+  
+  profits_pv <- profits_churn/((1 + monthly_discount)^discount_period)
+  
+  cum_profits <- cumsum(profits_pv)
+  
+  clv <- cum_profits[60]
 }
 
-profits_churn <- profits * churn
-
-# present value 
-discount_period <- c(1:n)
-
-profits_pv <- profits_churn/((1 + monthly_discount)^discount_period)
-
-clv_baseline <- cumsum(profits_pv)
-clv_baseline[60]
 ```
 
-For an average customer, the monthly revenue is expected to be `r format_nr(mean(representative$revenue),'$', dec = 2)`. 
+For an average customer, the monthly revenue is expected to be `r format_nr(mean(representative$revenue),'$', dec = 2)`. After reducing the overage to 43 minutes, the average churn rate is expected to be `r format_nr(overage_churn, perc = T)`. However, to accomodate higher data usage, we may expect increase in variable costs as more resources need to be allocated. So in our calculation, we assume the variable cost rate to be 42%, a reasonable rise from our initial assumption of 40%.
+
+```{r}
+base_clv <- cal_clv(baseline, initial_variable)
+overage_clv <- cal_clv(overage_churn, 0.42)
+```
+
+```{r}
+# define function to minimize the difference
+cal_diff <- function(churn_rate, cost_rate){
+  clv <- cal_clv(churn_rate, cost_rate) # clv after incentive
+  diff <- abs(clv - base_clv)
+  return(diff)
+}
+
+optimize_result <- optimize(cal_diff, interval = c(0.4, 0.5), maximum = FALSE, churn_rate = overage_churn) # find the cost rate that will minimize the difference between clv after intervention and baseline clv
+max_cost_rate <- optimize_result$minimum
+
+```
+
+Based on our calculation, we expect an increase of `r format_nr(overage_clv - base_clv, '$')` in average CLV, based on our assumptions. To be more specific, we can spend up to `r format_nr(max_cost_rate, perc = T)` of revenues as variable cost to allow this strategy. Any cost beyond that is not worthwhile. 
