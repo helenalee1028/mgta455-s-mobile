@@ -76,7 +76,7 @@ Actions/offers/incentives
 
 * Open more stores in central Singapore to increase service level, such as providing help with account, and making changing plan more flexible and easy.
 
-* Provide customized plans specially for students and professionals to meet their needs. For example, include more data and less messaegs in students' plans. 
+* Provide customized plans specially for students and professionals to meet their needs. For students plan, include more data and less messaegs. For professionals' plan, provided more data and calls.
 
 
 ## Question 4
@@ -111,4 +111,17 @@ representative %>%
 Test process would be, send promotional email to students and professionals about new customized plans, and get the number of people actually accept and switch plans. Wait another 4 months to see churn rate among them. The reason to wait 4 months is people tend to need more time to adapt to new plan and figure out whether they want to stay. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate for students and professionals respectively.
 
 Result assumption: we assume that with marketing customized plans, the churn rate for students and professionals would go down by 10% respectively.
+
+
+## Question 5
+
+* Open new store in CS
+
+With a new store opening in CS, customers in CS are automatically targeted.
+
+* Promote customized plans for students and professionals.
+
+Students and professionals are targeted respectively.
+
+## Question 6
 
