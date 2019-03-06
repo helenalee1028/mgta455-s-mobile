@@ -3,26 +3,57 @@ title: "Jasmine"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+Create data
+```{r}
+s_mobile$mou_log <- log(s_mobile$mou + 1)
+train <- s_mobile %>%
+  filter(representative == 0)%>%
+  mutate(cweight = ifelse(churn == 'yes', 1L, 49L))
+
+representative <- s_mobile %>%
+  filter(representative == 1)
 ```
 
-## R Markdown
+Logistic model
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+result <- logistic(
+  train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "revenue", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", 
+    "eqpdays", "refurb",  "highcreditr", "mcycle", 
+   "travel", "region", "occupation", "mou_log"
+  ), 
+  lev = "yes", 
+  wts = "cweight", 
+  check = "standardize"
+)
+summary(result)
+pred <- predict(result, pred_data = representative)
+plot(result, plots = "coef", custom = FALSE)
+#print(pred, n = 10)
+representative <- store(representative, pred, name = "pred_logit")
 ```
 
-## Including Plots
+Show the result in graph.
+```{r}
+coef_table  <- write.coeff(result, sort = TRUE,intercept = FALSE) %>%
+  select(label,OR,p.value,importance)
 
-You can also embed plots, for example:
+coef_table
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+coef_table %>%
+  ggplot(aes(x = fct_reorder(label, importance), y = importance))+
+  geom_bar(stat = 'identity') +
+  coord_flip()+
+  geom_hline(yintercept = 1,linetype = 'dotted',color = 'red') +
+  labs(x = 'variables')
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+central singapore：merlion park, singapore landmerk and main tourist attraction, located near one fullerton (浮尔顿酒店)， near central business district.
+
+
