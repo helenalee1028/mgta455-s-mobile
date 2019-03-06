@@ -17,7 +17,7 @@ s_mobile_test <- s_mobile %>%
 ```
 
 
-
+Logistic model
 
 ```{r}
 result <- logistic(
@@ -40,7 +40,6 @@ s_mobile_test <- store(s_mobile_test, pred, name = "pred_logit")
 ```
 ```{r}
 acc(s_mobile_test,'pred_logit')
-
 ```
 
 
