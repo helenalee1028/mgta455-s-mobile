@@ -82,35 +82,39 @@ Actions/offers/incentives
 ## Question 4
 
 ```{r}
-df <- representative %>%
+df_region <- representative %>%
   group_by(region) %>%
   summarize(count = n(),
             Churn = sum(churn == 'yes'),
             left = count - Churn,
             per = sum(churn == 'yes') / count)
-df
+df_region
 ```
 
 * Test on opening new store in CS (central singapore). 
 
 Among the 5977 CS customers in the representative data set, 2.8% of them churned in the past 30 days. Our test would be, open a new branch in CS and wait for another month. We then check precentage of people churning among the left 5808 people. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate.
 
-Result assumption: we assume that with opening one more store, the churn rate for CS resident would go down by 10%.
+Result assumption: we assume that with opening one more store, the churn rate for CS resident would go down by 15%.
 
 * Test on create customized planning for students and professionals
 
 ```{r}
-representative %>%
+df_occupation <- representative %>%
   group_by(occupation) %>%
   summarize(count = n(),
             Churn = sum(churn == 'yes'),
             left = count - Churn,
-            per = sum(churn == 'yes') / count)
+            per = sum(churn == 'yes') / count) %>%
+  arrange(desc(per))
+  
+
+df_occupation
 ```
 
 Test process would be, send promotional email to students and professionals about new customized plans, and get the number of people actually accept and switch plans. Wait another 4 months to see churn rate among them. The reason to wait 4 months is people tend to need more time to adapt to new plan and figure out whether they want to stay. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate for students and professionals respectively.
 
-Result assumption: we assume that with marketing customized plans, the churn rate for students and professionals would go down by 10% respectively.
+Result assumption: we assume that with marketing customized plans, the churn rate for students and professionals would go down by 15% respectively.
 
 
 ## Question 5
@@ -124,4 +128,44 @@ With a new store opening in CS, customers in CS are automatically targeted.
 Students and professionals are targeted respectively.
 
 ## Question 6
+
+Calculate average churn rate based on our assumption.
+
+
+```{r}
+ave_churn = sum(representative$churn == 'yes') / nrow(representative)
+
+ave_churn_cs <- (df_region$Churn[1]*0.85 + sum(df_region$Churn[2:5]))/nrow(representative)
+
+ave_churn_occ <- (sum(df_region$Churn[1:2]) *0.85 + sum(df_region$Churn[3:5]))/nrow(representative)
+
+ave_churn_cs
+ave_churn_occ
+```
+
+
+As for cost, we assume variable cost rate to be 40% and fixed cost is \$8 per capita per month. A little adjustment is needed when evaluate the economics. At this stage of evaluating econoics, we assume both variable cost and fixed cost remain the same. We will then estimate the maximum we can afford in cost to allow this strategy. 
+
+### Open new store in CS
+
+```{r}
+cs_clv <- cal_clv(ave_churn_cs,0.40)
+occ_clv <- cal_clv(ave_churn_occ,0.40)
+
+```
+
+CLV for opening a new store in CS is `r format_nr(cs_clv, '$', dec = 2)`. CLV for promoting customized plans for students and professionals is `r format_nr(occ_clv, '$', dec = 2)` 
+
+We then calculate the maximum cost we can afford to accept the strategy.
+
+If we choose to open new store in CS, it is a one-time build up cost, the set-up cost we can afford is just the difference between two CLVS. It is `r format_nr(cs_clv - base_clv, '$', dec = 2)`
+
+If we choose to promote specialized plans.
+
+```{r}
+optimize_result <- optimize(cal_diff, interval = c(0.4, 0.5), maximum = FALSE, churn_rate = ave_churn_occ) 
+max_cost_rate <- optimize_result$minimum
+```
+
+Based on our calculation, we expect an increase of `r format_nr(occ_clv - base_clv, '$')` in average CLV, based on our assumptions.  To be more specific, we can spend up to `r format_nr(max_cost_rate, perc = T)` of revenues as variable cost to allow promoting specialized plans. Any cost beyond that is not worthwhile. 
 
