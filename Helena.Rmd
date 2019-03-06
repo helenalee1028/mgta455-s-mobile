@@ -343,6 +343,9 @@ coef_table %>%
 eqpdays - statistically speaking, 2 standard deviations increase in eqpdays, equivalent to 
 `r round(2 * sd(train_val$eqpdays), 2)` days, would increase the odds of churning by 80.6%, keeping everything else constant. This is probably because that the longer the customer owning the current handset, the more the customer would desire to change to a new handset. As it is common that instead of buying a new handset from a mobile retailer, people may go to a carrier and get a much cheaper price of the same handset with signing several years of contract with the carrier. So the probability of churning increases when a customer wants to change to a new handset.
 
+highcreditr|yes - statistically speaking,  with sd = 0.5 for an even split between "yes" and "no", highcreditr is "yes" comparing to "no", would decrease the odds of churning by 50.5%, keeping everything else constant. This is probably because that, firstly, people with low credit scores tend to have more finacial problems. When the financial problems become serious, they may have to consider to change their phone plan to a smaller carrier with a lower price or even stop using it for good.
+
+
 explore the feature "eqpdays":
 ```{r}
 summary(train_val$eqpdays)
@@ -389,22 +392,50 @@ sum(eqpdays_c$eqpdays<=100)/nrow(eqpdays_c)
 After several attempts, the "high" group has a raltively high churn rate, while "low" group has a relatively low churn rate. "Medium" group has the similar amount of people churning and staying.
 
 So for "high" group (i.e: eqpdays more than 700), we can offer a discount of 5% via 36 monthly payments including a new phone and the plan based on what the customer's choice.
-We assume that for each person, the incentive decrese the churning probability by 0.1 percent
+We assume that for each person, the incentive decrese the churning probability by 0.2 percent
+
 ```{r}
-result <- logistic(
-  train_val, 
-  rvar = "churn", 
-  evar = c(
-    "eqpdays"
-  ), 
-  lev = "yes", 
-  check = c("standardize")
-)
-summary(result)
+representative$eqpdays_churn = representative$pred_logit
+representative %>%
+  mutate(category = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=700,'medium','high'))) %>%
+  filter(category == 'high') %>%
+  mutate(eqpdays_churn = eqpdays_churn*1.01)
 ```
 
+```{r}
+eqpdays_clv <- cal_clv(pred_logit, 0.40)
+```
+
+```{r}
+# initial setup for CLV calculation
+n <- 5 * 12
+discount <- 0.12
+discount_period <- c(1:n)
+
+revenue <- rep(mean(representative$revenue), n)
+fixed_cost <- rep(8, n)
+initial_variable <- 0.4
+
+monthly_discount <- (1 + discount)^(1/12) - 1
 
 
-
-possible way of reducing the churning rate regarding feature "eqpdays":
+# define clv calculation function
+cal_clv <- function(churn_rate, cost_rate){
+  total_cost <- fixed_cost + cost_rate * revenue
+  profits <- revenue - total_cost
+  
+  remain_customer <- rep(1,n)
+  for (i in 1:(length(remain_customer)-1)){
+    remain_customer[i+1] <- remain_customer[i] * (1 - churn_rate)
+  }
+  
+  profits_churn <- profits*remain_customer
+  
+  profits_pv <- profits_churn/((1 + monthly_discount)^discount_period)
+  
+  cum_profits <- cumsum(profits_pv)
+  
+  clv <- cum_profits[60]
+}
+```
 
