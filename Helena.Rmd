@@ -54,6 +54,7 @@ s_mobile <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-201
 ```{r}
 library(tidyverse)
 library(caret)
+library(gbm)
 ```
 
 
@@ -222,10 +223,7 @@ nn_pred <- predict(nn_result, pred_data = test)
 test <- store(test, nn_pred, name = "pred_nn")
 ```
 
-```{r}
-cols = c('pred_logit','pred_nn')
-cm(test,cols)
-```
+
 
 ```{r}
 ## Get columns for gbm model
@@ -260,12 +258,32 @@ saveRDS(gbm_caret$results, "gbm_tune_train1.rds")
 ```
 
 ```{r}
-params1 <- readRDS("data/gbm_tune_train1.rds")
+params1 <- readRDS("gbm_tune_train1.rds")
 params1 %>% 
   arrange(desc(ROC)) %>% 
   top_n(ROC, n = 10)
 
-best_tune1 <- readRDS("data/gbm_best_tune_train1.rds")
+best_tune1 <- readRDS("gbm_best_tune_train1.rds")
 best_tune1
 ```
 
+```{r}
+train_gbm$churn <- ifelse(train_gbm$churn  == "yes", 1, 0)
+test_gbm$churn <- ifelse(test_gbm$churn  == "yes", 1, 0)
+
+best_gbm <- gbm(formula = churn ~ . , 
+                  data = train_gbm, 
+                  distribution = "bernoulli", 
+                  interaction.depth = best_tune1[1,2],
+                  shrinkage = best_tune1[1,3],
+                  n.trees = best_tune1[1,1],
+                  n.minobsinnode = best_tune1[1,4])
+
+gbm_pred <- predict(best_gbm, newdata = test_gbm, type = "response", n.trees = best_tune1[1,1])
+test$"pred_gbm" <- gbm_pred
+```
+
+```{r}
+cols = c('pred_logit','pred_nn','pred_gbm')
+cm(test,cols)
+```
