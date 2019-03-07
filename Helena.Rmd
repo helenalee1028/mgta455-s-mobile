@@ -361,6 +361,11 @@ eqpdays_c = train_val %>%
   select(churn,eqpdays)
 ```
 
+```{r}
+summary(representative$eqpdays)
+```
+
+
 option 1:
 ```{r}
 eqpdays_c = eqpdays_c %>%
@@ -391,19 +396,34 @@ sum(eqpdays_c$eqpdays<=100)/nrow(eqpdays_c)
 ```
 After several attempts, the "high" group has a raltively high churn rate, while "low" group has a relatively low churn rate. "Medium" group has the similar amount of people churning and staying.
 
-So for "high" group (i.e: eqpdays more than 700), we can offer a discount of 5% via 36 monthly payments including a new phone and the plan based on what the customer's choice.
-We assume that for each person, the incentive decrese the churning probability by 0.2 percent
+design an experiment:
+Among all 1 million subscribers, randomly pick 1%, i.e: 10,000 people, and allocate them to group "high", "medium" and "low", for eqpdays more than 700, between 100 and 700, and less or equal to 100. Target people in group "high", offer them a discount of 5% via 36 monthly payments including a new phone and the plan based on what the customers' choices. For people in group "medium", offer them a discount of 2% via 36 monthly payments including a new phone and the plan based on what the customers' choices
+
+We assume that the experiment result shows that for each person in group "high", the incentive decreases the churning probability by 0.2 percent on average. And for each person in group "medium", the incentive decreases the churning probability by 0.1 percent on average
 
 ```{r}
 representative$eqpdays_churn = representative$pred_logit
-representative %>%
+high_r = representative %>%
   mutate(category = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=700,'medium','high'))) %>%
   filter(category == 'high') %>%
+  mutate(eqpdays_churn = eqpdays_churn*1.02)
+  
+medium_r = representative %>%
+  mutate(category = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=700,'medium','high'))) %>%
+  filter(category == 'medium') %>%
   mutate(eqpdays_churn = eqpdays_churn*1.01)
+
+low_r = representative %>%
+  mutate(category = ifelse(eqpdays<=100,'low',ifelse(eqpdays<=700,'medium','high'))) %>%
+  filter(category == 'low') %>%
+  mutate(eqpdays_churn = pred_logit)
+
+representative_eqpdays = rbind(high_r,medium_r,low_r)
+table(representative_eqpdays$category)
 ```
 
 ```{r}
-eqpdays_clv <- cal_clv(pred_logit, 0.40)
+eqpdays_clv <- cal_clv(representative_eqpdays$eqpdays_churn, 0.42)
 ```
 
 ```{r}
