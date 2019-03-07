@@ -19,7 +19,7 @@ Logistic model
 
 ```{r}
 result <- logistic(
-  entire_train, 
+  train, 
   rvar = "churn", 
   evar = c(
     "changer", "changem", "revenue", "overage", "roam", "conference", 
@@ -62,7 +62,7 @@ Key Driver Analysis:
 
 * Retired - statistically speaking, odds of retired customer churning decrease by 82% compared to other customers, keeping everything else constant. This is probably because senior customers tend to have less expectation on mobile service, thus they are less picky. They are also reluctant to acccept new things and they won't bother calling to leave.
 
-* Student - statistically speaking, odds of student customer churning increase by 89% compared to other customers, keeping everything else constant. This is probably because students have relatively low demand in mobile service and they have less stable financial support, which both make them more likely to churn.
+* Student - statistically speaking, odds of student customer churning increase by 89% compared to other customers, keeping everything else constant. This is probably because students have relatively more choices and they have less stable financial support, which both make them more likely to churn.
 
 * Professional - statistically speaking, odds of professional customer churning increase by 42% compared to other customers, keeping everything else constant. This is probably because prefessionals are really comfortable in accepting new changes and they have high demand in a good quality mobile service. Once their need is unsatisfied, they tend to churn and switch to other providers.
 
@@ -159,7 +159,7 @@ CLV for opening a new store in CS is `r format_nr(cs_clv, '$', dec = 2)`. CLV fo
 
 We then calculate the maximum cost we can afford to accept the strategy.
 
-If we choose to open new store in CS, it is a one-time build up cost, the set-up cost we can afford is just the difference between two CLVS. It is `r format_nr(cs_clv - base_clv, '$', dec = 2)`
+If we choose to open new store in CS, it is a one-time build up cost, the set-up cost we can afford is just the difference between two CLVS. It is `r format_nr(cs_clv - base_clv, '$', dec = 2)`.
 
 If we choose to promote specialized plans.
 
@@ -170,3 +170,73 @@ max_cost_rate <- optimize_result$minimum
 
 Based on our calculation, we expect an increase of `r format_nr(occ_clv - base_clv, '$')` in average CLV, based on our assumptions.  To be more specific, we can spend up to `r format_nr(max_cost_rate, perc = T)` of revenues as variable cost to allow promoting specialized plans. Any cost beyond that is not worthwhile. 
 
+
+
+
+
+Appendix
+
+## Question 3
+ 
+* Usage trend
+
+Usage trend is the direct result from customer usage, we may recommend coming up with incentives in changing customer usage to decrease churning.
+
+1. Changer
+
+OR of changer is about 1.03, which makes it a less important driven factor in churn rate. Besides, as revenue is a mixed and comprehensive result of many influencing factor, such as infrastrucure cost and pricing. We have no recommendation in directly change revenue trend.
+
+2. Changem
+
+As changem is direclty related to mou, which is monthly minutes usage. We have little interest in encouraging our cusotmers to call less, thus, we prefer to find incentives from other perspectives.
+
+
+
+* Customer action
+
+1. Custcare
+
+Custcare is not statistically significant in predicting churning, we would not take it into consideration.
+
+2. retcalls
+
+OR of rectcalls is about 1.23, which means the more customer calls retention center, the more likely they will churn. We can come up ways in improving our service, which will result in them calling less. Action would be same as opening a new store in CS to provide customer with more accessible help.
+
+* Quality 
+
+dropvce
+
+Action:
+
+Drop voice calls are always because of poor signal strength. We can invest more in infrastructure, such as building cellular towers to eliminate the area of dead zone.
+
+```{r}
+target_dropvce <- median(representative$dropvce)
+target_dropvce
+representative_dropvce <- representative %>% 
+  mutate(dropvce = ifelse(dropvce > target_dropvce, target_dropvce, dropvce))
+
+pred_dropvce <- predict(logit_model, newdata = representative_dropvce, type = "response") %>% 
+  adjust_prob()
+
+ave_churn_dropvce <- mean(pred_dropvce)
+ave_churn_dropvce
+```
+
+## Question 4
+
+The effect of eliminating drop voice calls to median level can decrease overall churn rate by `r format_nr(baseline - ave_churn_dropvce , perc = T, dec = 2)`.
+
+## Question 5
+
+The customer we target to eliminate drop voice calls are whose average dropped calls number is larger than  `r target_dropvce`.
+
+
+## Question 6
+
+```{r}
+drop_clv <- cal_clv(ave_churn_dropvce,0.40)
+
+```
+
+If we invest more in infrastructure, it is a one-time build up cost, the set-up cost we can afford is the difference between two CLVS. It is `r format_nr(drop_clv - base_clv, '$', dec = 2)`.
