@@ -209,7 +209,7 @@ eval_df <- validation %>%
 acc(eval_df, vars)
 ```
 
-### Question 2 - Key Driver Analysis
+### Question 2 - Main Driver Analysis
 
 After choosing the suitable model, we train on the entire dataset (training + validation) and then analyze the main drivers to customer churning. 
 
@@ -290,7 +290,7 @@ Statistically speaking, 2 standard deviations increase in eqpdays, equivalent to
 
 Customers with high credit score would have lower odds of churning by 50%, keeping everything else constant. This is probably because that, firstly, people with low credit scores tend to have more finacial problems. When the financial problems become serious, they may have to consider changing their phone plan to a smaller carrier with lower price or even stop using for good.
 
-### Question 3 - Proactive strategy proposals
+### Question 3 - Proactive Strategy Proposals
 
 Based on drivers analysis, we come up with below actions and incentives for proactive churn management. 
 
@@ -379,7 +379,7 @@ Dropped voice calls are mainly because of poor signals. We can invest more in in
 
 Since customers with older equipments are more likely to churn, we offer discounts for equipment purchase. This incentive can not only reduce churn rate by reducing equipment ages, but also have the potential to increase equipment sales. 
 
-### Question 4 - Quantify the impact on churn probability
+### Question 4 - Quantify the Impact on Churn Probability
 
 **1. Overage - the reduction on average churn probability if we can limit overage to current median value.**
 
@@ -528,17 +528,20 @@ The customer we target to eliminate drop voice calls are whose average dropped c
 
 As explained as above, we target customers whose equipments are older than 700 days with a promotion discount of 8% and target customers whose equipment age is between 100 and 700 days with 5% discount. 
 
-### Question 6 - Evaluate the economics
+### Question 6 - Evaluate the Economics
 
 To evaluate the economic impact on 5-year profitability, we made following assumptions for customer lifetime value calculation. 
 
-1. Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests and we assume a cost rate of 40%;
+* Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests and we assume a cost rate of 40%;
 
-2. Annual Discount Rate - we assume it to be 12%, which is a reasonable assumption for a company's annual rate of return;
+* Annual Discount Rate - we assume it to be 12%, which is a reasonable assumption for a company's annual rate of return;
 
-3. Revenue arrives at the end of each month;
+* Revenue arrives at the end of each month;
 
-4. Customers can cancel their plans any time but it will take effect at the end of the month. 
+* Customers can cancel their plans any time but it will take effect at the end of the month. 
+
+&nbsp;
+&nbsp;
 
 #### Profitability Evaluation of Overage
 
@@ -598,6 +601,9 @@ max_cost_rate <- optimize_result$minimum
 
 We expect an increase of `r format_nr(overage_clv - base_clv, '$')` in average CLV, based on our assumptions. To be more specific, we can spend up to `r format_nr(max_cost_rate, perc = T)` of revenues as variable cost to allow this strategy. Any cost beyond that is not worthwhile. 
 
+&nbsp;
+&nbsp;
+
 #### Profitability Evaluation of opening store in Central Singapore
 
 At this stage of evaluating economics, we assume both variable cost and fixed cost remain the same. We will then estimate the maximum we can afford in installment cost to allow this strategy. 
@@ -609,6 +615,8 @@ cs_clv <- cal_clv(ave_churn_cs,initial_variable)
 
 CLV for opening a new store in CS is `r format_nr(cs_clv, '$', dec = 2)`. If we choose to open new store in CS, it is a one-time build up cost. The maximum set-up cost we can afford is the difference between this CLV and baseline CLV, which is `r format_nr(cs_clv - base_clv, '$', dec = 2)` per customer.   
 
+&nbsp;
+&nbsp;
 
 #### Profitability Evaluation of offering new plans to students and professionals
 
@@ -618,6 +626,9 @@ occ_clv <- cal_clv(ave_churn_occ,initial_variable)
 
 CLV for promoting customized plans for students and professionals is `r format_nr(occ_clv, '$', dec = 2)`. If we can accomodate those plan changes without incurring additional costs, this strategy would be relatively effective.   
 
+&nbsp;
+&nbsp;
+
 #### Profitability Evaluation of building new celluar towers
 
 ```{r}
@@ -626,6 +637,8 @@ drop_clv <- cal_clv(ave_churn_dropvce,0.40)
 
 We can invest more in celluar tower related infrastructures, which is a one-time build up cost. The maximum set-up cost we can afford is the difference between two CLVs, SGD `r format_nr(drop_clv - base_clv, '$', dec = 2)` per customer.   
 
+&nbsp;
+&nbsp;
 
 #### Profitability Evaluation of offering new equipment plans
 

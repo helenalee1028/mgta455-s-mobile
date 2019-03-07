@@ -375,12 +375,12 @@ $(document).ready(function () {
 <div id="TOC">
 <ul>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#question-1">Question 1</a></li>
-<li><a href="#question-2---key-driver-analysis">Question 2 - Key Driver Analysis</a></li>
-<li><a href="#question-3---proactive-strategy-proposals">Question 3 - Proactive strategy proposals</a></li>
-<li><a href="#question-4---quantify-the-impact-on-churn-probability">Question 4 - Quantify the impact on churn probability</a></li>
+<li><a href="#question-1---build-predictive-model">Question 1 - Build Predictive Model</a></li>
+<li><a href="#question-2---main-driver-analysis">Question 2 - Main Driver Analysis</a></li>
+<li><a href="#question-3---proactive-strategy-proposals">Question 3 - Proactive Strategy Proposals</a></li>
+<li><a href="#question-4---quantify-the-impact-on-churn-probability">Question 4 - Quantify the Impact on Churn Probability</a></li>
 <li><a href="#question-5---customer-target">Question 5 - Customer Target</a></li>
-<li><a href="#question-6---evaluate-the-economics">Question 6 - Evaluate the economics</a></li>
+<li><a href="#question-6---evaluate-the-economics">Question 6 - Evaluate the Economics</a></li>
 </ul>
 </div>
 
@@ -422,8 +422,8 @@ validation &lt;- s_mobile %&gt;%
 representative &lt;- s_mobile %&gt;% 
   filter(representative == 1)</code></pre>
 </div>
-<div id="question-1" class="section level3">
-<h3>Question 1</h3>
+<div id="question-1---build-predictive-model" class="section level3">
+<h3>Question 1 - Build Predictive Model</h3>
 <div id="logistic-regression" class="section level4">
 <h4>Logistic Regression</h4>
 <p>We hand picked the variables whose coefficients are statistically significant at 10% level. Below is model summary.</p>
@@ -578,8 +578,8 @@ acc(eval_df, vars)</code></pre>
 2    pred_nn 0.6757265 0.6688889 0.7478364</code></pre>
 </div>
 </div>
-<div id="question-2---key-driver-analysis" class="section level3">
-<h3>Question 2 - Key Driver Analysis</h3>
+<div id="question-2---main-driver-analysis" class="section level3">
+<h3>Question 2 - Main Driver Analysis</h3>
 <p>After choosing the suitable model, we train on the entire dataset (training + validation) and then analyze the main drivers to customer churning.</p>
 <pre class="r"><code>entire_train &lt;- rbind(train, validation)
 result &lt;- logistic(
@@ -647,7 +647,7 @@ plot(result, plots = &quot;coef&quot;, custom = FALSE)</code></pre>
 <ol start="2" style="list-style-type: decimal">
 <li>Mean monthly minutes of use (log)</li>
 </ol>
-<p>Similarly, 2 standard deviations increase in log transformed ‘mean monthly minutes of use’, which is equivalent to around 18 minutes, would decrease the odds of customer churning by approximately 40%.</p>
+<p>Similarly, 2 standard deviations increase in log-transformed ‘mean monthly minutes of use’, which is equivalent to around 18 minutes, would decrease the odds of customer churning by approximately 40%.</p>
 <ol start="3" style="list-style-type: decimal">
 <li>Occupation</li>
 </ol>
@@ -672,7 +672,7 @@ plot(result, plots = &quot;coef&quot;, custom = FALSE)</code></pre>
 <p>Customers with high credit score would have lower odds of churning by 50%, keeping everything else constant. This is probably because that, firstly, people with low credit scores tend to have more finacial problems. When the financial problems become serious, they may have to consider changing their phone plan to a smaller carrier with lower price or even stop using for good.</p>
 </div>
 <div id="question-3---proactive-strategy-proposals" class="section level3">
-<h3>Question 3 - Proactive strategy proposals</h3>
+<h3>Question 3 - Proactive Strategy Proposals</h3>
 <p>Based on drivers analysis, we come up with below actions and incentives for proactive churn management.</p>
 <p><strong>1. Customer Usage</strong></p>
 <ul>
@@ -759,7 +759,7 @@ df_occupation</code></pre>
 <p>Since customers with older equipments are more likely to churn, we offer discounts for equipment purchase. This incentive can not only reduce churn rate by reducing equipment ages, but also have the potential to increase equipment sales.</p>
 </div>
 <div id="question-4---quantify-the-impact-on-churn-probability" class="section level3">
-<h3>Question 4 - Quantify the impact on churn probability</h3>
+<h3>Question 4 - Quantify the Impact on Churn Probability</h3>
 <p><strong>1. Overage - the reduction on average churn probability if we can limit overage to current median value.</strong></p>
 <pre class="r"><code># use model without standard deviations for prediction
 logit_model &lt;- glm(churn == &quot;yes&quot; ~ changer+changem+mou_log+overage+roam+
@@ -867,14 +867,15 @@ equip_churn &lt;- mean(pred_equip)</code></pre>
 <p>As explained as above, we target customers whose equipments are older than 700 days with a promotion discount of 8% and target customers whose equipment age is between 100 and 700 days with 5% discount.</p>
 </div>
 <div id="question-6---evaluate-the-economics" class="section level3">
-<h3>Question 6 - Evaluate the economics</h3>
+<h3>Question 6 - Evaluate the Economics</h3>
 <p>To evaluate the economic impact on 5-year profitability, we made following assumptions for customer lifetime value calculation.</p>
-<ol style="list-style-type: decimal">
+<ul>
 <li><p>Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests and we assume a cost rate of 40%;</p></li>
 <li><p>Annual Discount Rate - we assume it to be 12%, which is a reasonable assumption for a company’s annual rate of return;</p></li>
 <li><p>Revenue arrives at the end of each month;</p></li>
 <li><p>Customers can cancel their plans any time but it will take effect at the end of the month.</p></li>
-</ol>
+</ul>
+<p>   </p>
 <div id="profitability-evaluation-of-overage" class="section level4">
 <h4>Profitability Evaluation of Overage</h4>
 <pre class="r"><code># initial setup for CLV calculation
@@ -920,27 +921,31 @@ cal_diff &lt;- function(churn_rate, cost_rate){
 optimize_result &lt;- optimize(cal_diff, interval = c(0.4, 0.5), maximum = FALSE, churn_rate = overage_churn) # find the cost rate that will minimize the difference between clv after intervention and baseline clv
 max_cost_rate &lt;- optimize_result$minimum</code></pre>
 <p>We expect an increase of $28.05 in average CLV, based on our assumptions. To be more specific, we can spend up to 43.62% of revenues as variable cost to allow this strategy. Any cost beyond that is not worthwhile.</p>
+<p>   </p>
 </div>
 <div id="profitability-evaluation-of-opening-store-in-central-singapore" class="section level4">
 <h4>Profitability Evaluation of opening store in Central Singapore</h4>
 <p>At this stage of evaluating economics, we assume both variable cost and fixed cost remain the same. We will then estimate the maximum we can afford in installment cost to allow this strategy.</p>
 <pre class="r"><code>cs_clv &lt;- cal_clv(ave_churn_cs,initial_variable)</code></pre>
 <p>CLV for opening a new store in CS is $745.76. If we choose to open new store in CS, it is a one-time build up cost. The maximum set-up cost we can afford is the difference between this CLV and baseline CLV, which is $12.48 per customer.</p>
+<p>   </p>
 </div>
 <div id="profitability-evaluation-of-offering-new-plans-to-students-and-professionals" class="section level4">
 <h4>Profitability Evaluation of offering new plans to students and professionals</h4>
 <pre class="r"><code>occ_clv &lt;- cal_clv(ave_churn_occ,initial_variable)</code></pre>
 <p>CLV for promoting customized plans for students and professionals is $754.41. If we can accomodate those plan changes without incurring additional costs, this strategy would be relatively effective.</p>
+<p>   </p>
 </div>
 <div id="profitability-evaluation-of-building-new-celluar-towers" class="section level4">
 <h4>Profitability Evaluation of building new celluar towers</h4>
 <pre class="r"><code>drop_clv &lt;- cal_clv(ave_churn_dropvce,0.40)</code></pre>
 <p>We can invest more in celluar tower related infrastructures, which is a one-time build up cost. The maximum set-up cost we can afford is the difference between two CLVs, SGD $8.87 per customer.</p>
+<p>   </p>
 </div>
 <div id="profitability-evaluation-of-offering-new-equipment-plans" class="section level4">
 <h4>Profitability Evaluation of offering new equipment plans</h4>
 <pre class="r"><code>equip_clv &lt;- cal_clv(equip_churn, initial_variable)</code></pre>
-<p>If churn rate got reduced as expected, we’ll see an average CLV of 754.09. However, the increase of 20.8 SGD comes at the cost of reduced profits from equipment sales. Since we are not in a position to analyze the sales increase, if any, incurred by our proposed promotions, we are unable to determine how much profits can be sacrificed to reduce average churn rate. For example, if the promotions can’t increase sales at all, the equivalent discount of CLV difference is the maximum discount we can offer. However, if the promotions increase the sales by 2%, then the revenues of the additional sales can be used at our disposal.</p>
+<p>If churn rate got reduced as expected, we’ll see an average CLV of 755.01. However, the increase of 21.72 SGD comes at the cost of reduced profits from equipment sales. Since we are not in a position to analyze the sales increase, if any, incurred by our proposed promotions, we are unable to determine how much profits can be sacrificed to reduce average churn rate. For example, if the promotions can’t increase sales at all, the equivalent discount of CLV difference is the maximum discount we can offer. However, if the promotions increase the sales by 2%, then the revenues of the additional sales can be used at our disposal.</p>
 </div>
 </div>
 
