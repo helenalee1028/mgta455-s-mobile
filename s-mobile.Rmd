@@ -56,4 +56,528 @@ Please complete this R-markdown document by answering the questions in `s-mobile
 s_mobile <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/s_mobile.rds"))
 ```
 
-## Question answers
+
+```{r include = FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(forecast)
+library(ModelMetrics)
+```
+
+```{r}
+# log transformation for 'mou' variable
+s_mobile$mou_log <- log(s_mobile$mou + 1)
+
+# split into training, validation and representative data
+train <- s_mobile %>% 
+  filter(training == 1)
+
+validation <- s_mobile %>% 
+  filter(training == 0)
+
+representative <- s_mobile %>% 
+  filter(representative == 1)
+```
+
+### Question 1
+#### Logistic Regression
+
+We hand picked the variables whose coefficients are statistically significant at 10% level. Below is model summary. 
+
+```{r warning=FALSE}
+logit_result <- logistic(
+  train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", "eqpdays", 
+    "refurb", "highcreditr", "mcycle", "travel", "region", "occupation", 
+    "mou_log", "revenue"
+  ), 
+  lev = "yes", 
+  check = "standardize"
+)
+
+summary(logit_result)
+
+
+# predict on validation data for further comparison
+
+pred_logit <- predict(logit_result, pred_data = validation)$Prediction
+```
+
+#### Neural Network
+
+In this part, we tune neural network model by iterating over size 3 to 10, with decay rate from 0.1 to 0.8. The highest validation AUC is achieved by size 10 and decay rate of 0.1. 
+
+```{r eval = FALSE}
+### tune neural network
+params <- expand.grid(size = seq(3,10,1), decay = seq(0.1, 0.8, 0.1))
+params$auc <- NA
+
+real_churn <- ifelse(validation$churn == "yes", 1, 0)
+for (i in 1:nrow(params)){
+  result <- nn(
+    train, 
+    rvar = "churn", 
+    evar = c(
+      "changer", "changem", "revenue", "mou", "overage", "roam", 
+      "conference", "months", "uniqsubs", "custcare", "retcalls", 
+      "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
+      "mcycle", "car", "travel", "region", "occupation"
+    ), 
+    lev = "yes", 
+    size = params[i,1], 
+    decay = params[i,2], 
+    seed = 1234
+  )
+  
+  pred <- predict(result, pred_data = validation)$Prediction
+  
+  auc <- ModelMetrics::auc(real_churn, pred)
+  params[i,3] <- auc
+  
+}
+
+saveRDS(params, 'nn_tune.rds')
+```
+
+```{r}
+nn_tune1 <- readRDS("nn_tune1.rds")
+pos <- which.max(nn_tune1$auc)
+
+result <- nn(
+    train, 
+    rvar = "churn", 
+    evar = c(
+      "changer", "changem", "revenue", "mou", "overage", "roam", 
+      "conference", "months", "uniqsubs", "custcare", "retcalls", 
+      "dropvce", "eqpdays", "refurb", "smartphone", "highcreditr", 
+      "mcycle", "car", "travel", "region", "occupation"
+    ), 
+    lev = "yes", 
+    size = nn_tune1[pos,1], 
+    decay = nn_tune1[pos,2], 
+    seed = 1234
+  )
+
+pred_nn <- predict(result, pred_data = validation)$Prediction
+```
+
+#### Evaluate Models
+
+Comparing prediction accuracy, AUC and true positive rate, we can see that neural network outperforms logistic regression in terms of accuracy and AUC, but underperforms in true positive rate. Since the performance difference isn't substantial, and the key purpose of our analysis is to locate the main drivers for churn rate, we'll use logistic regression for our further analysis.  
+
+```{r}
+# define evaluation function
+acc <- function(dat, vars){
+  
+  cm_df <- as.data.frame(matrix(NA, ncol = 4, nrow = length(vars)))
+  colnames(cm_df) <- c("var", "acc", "tpr", "auc")
+  
+  for (i in 1:length(vars)){
+    
+    var <- vars[i]
+    probs <- pull(dat, !!var)
+    churn <- pull(dat, "churn")
+    
+    pred <- ifelse(pull(dat, !!var) > 0.5, "yes", "no")
+    
+    acc <- sum(churn == pred)/nrow(dat)
+    tpr <- sum(churn == "yes" & pred == "yes")/sum(churn == "yes")
+    auc <- ModelMetrics::auc(ifelse(churn=="yes",1,0), probs)
+
+    cm_vec <- c(var, acc, tpr, auc)
+    cm_df[i,] <- cm_vec
+    
+    cm_df[2:4] <- lapply(cm_df[2:4], as.numeric)
+  }
+  return(cm_df)
+}
+
+vars <- c("pred_logit", "pred_nn")
+eval_df <- validation %>% 
+  select(churn) %>% 
+  mutate(pred_logit = pred_logit, pred_nn = pred_nn)
+
+acc(eval_df, vars)
+```
+
+### Question 2 - Key Driver Analysis
+
+After choosing the suitable model, we train on the entire dataset (training + validation) and extend key drivers analysis. 
+
+```{r fig.width = 7, fig.height = 8.18, dpi = 144}
+
+entire_train <- rbind(train, validation)
+result <- logistic(
+  entire_train, 
+  rvar = "churn", 
+  evar = c(
+    "changer", "changem", "overage", "roam", "conference", 
+    "months", "uniqsubs", "retcalls", "dropvce", "eqpdays", 
+    "refurb", "highcreditr", "mcycle", "travel", "region", "occupation", 
+    "mou_log", "revenue"
+  ), 
+  lev = "yes", 
+  check = "standardize"
+)
+plot(result, plots = "coef", custom = FALSE)
+
+```
+
+```{r message=FALSE}
+coef_table <- result %>% write.coeff(intercept = FALSE) %>%
+  format_df(dec = 4) %>% 
+  select(label, OR, coefficient, std.error, z.value, p.value) %>%
+  mutate_at(vars(label), list(as.factor)) %>% 
+  mutate_at(vars(-label), list(as.numeric)) %>% 
+  mutate(importance = ifelse(OR >1, OR, 1.0/OR)) %>% 
+  arrange(desc(importance))
+
+coef_table
+```
+
+```{r}
+coef_table %>% 
+  ggplot(aes(x = fct_reorder(label, importance), y = importance)) + 
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_hline(yintercept = 1.0, linetype = 'dotted', color = 'red')+
+  labs(main = "Variable Importance in Churn Rate Prediction", 
+       x = "variables",
+       y = 'importance')
+  
+```
+
+Key Driver Analysis:
+
+1. Overage
+
+Statistically speaking, 2 standard deviations increase in overage, equivalent to 
+`r round(2 * sd(entire_train$overage), 2)` minutes, would increase the odds of churning by 92%, keeping everything else constant. This is probably because customers find the current plan unable to satisfy their needs and hence considering switching to other providers. 
+
+2. Mean monthly minutes of use (log)
+
+Similarly, 2 standard deviations increase in log transformed 'mean monthly minutes of use', which is equivalent to around 18 minutes, would decrease the odds of customer churning by approximately 40%. 
+
+3. Occupation
+
+* Retired - statistically speaking, odds of retired customer churning decrease by 82% compared to average customers (occupation|others), keeping everything else constant. This is probably because senior customers tend to have less expectation on mobile service, thus they are less picky. They are also reluctant to accept new things and they won't bother calling to leave S-mobile.
+
+* Student - statistically speaking, odds of student customer churning increase by 89% compared to average customers (occupation|others), keeping everything else constant. This is probably because students have relatively more choices in mobile service and they have less stable financial support, which both make them more likely to churn.
+
+* Professional - statistically speaking, odds of professional customer churning increase by 42% compared to other customers, keeping everything else constant. This is probably because prefessionals are really comfortable in accepting new changes and they have high demand in a good quality mobile service. Once their need is unsatisfied, they tend to churn and switch to other providers.
+
+4. Region
+
+* SW,NE,SE,NW - statistically speaking, odds of churning of customers living in southwest, northeast, southeast, and northwest Singapore decrease by about 35% compared to customers from central Singapore, keeping everything else constant. Central singapore is the main metropolitan region and central business district. Many famous landmarks are located there, such as merlion park, making it the most expensive area in Singapore. Thus, we can assume that residents in central singapore tend to have higher standards on mobile services and would be more likely to switch to something better if their current need is not met.
+
+5. Equipment Days
+
+Statistically speaking, 2 standard deviations increase in eqpdays, equivalent to 
+`r round(2 * sd(train_val$eqpdays), 2)` days, would increase the odds of churning by 80.6%, keeping everything else constant. This is probably because that the longer the customer owning the current handset, the more the customer would desire to change to a new handset. As it is common that instead of buying a new handset from a mobile retailer, people may go to a carrier and get a much cheaper price of the same handset with signing several years of contract with the carrier. So the probability of churning increases when a customer wants to change a new handset.
+
+6. Credit
+
+Customers with high credit score would have lower odds of churning by 50.5%, keeping everything else constant. This is probably because that, firstly, people with low credit scores tend to have more finacial problems. When the financial problems become serious, they may have to consider changing their phone plan to a smaller carrier with lower price or even stop using for good.
+
+### Question 3 - Proactive strategy proposals
+
+Based on drivers analysis, we come up with below actions and incentives for proactive churn management. 
+
+**1. Customer Usage**
+
+* Promote plans with larger data usage to customers whose consumption constantly exceed monthly limit;
+
+**2. Customer Characteristics**
+
+* Open more stores in central Singapore to increase service level, such as providing help with account, and making changing plan more flexible and easy. This is aimed to reduce the churn rate of customers at Central Singapore;
+
+* Provide customized plans specially for students and professionals to meet their needs. For students plan, include more data and less messaegs. For professionals' plan, provided more data and calls. 
+
+```{r}
+df_region <- representative %>%
+  group_by(region) %>%
+  summarize(count = n(),
+            leaving = sum(churn == 'yes'),
+            remaining = count - leaving,
+            churn_perc = sum(churn == 'yes') / count)%>% 
+  ungroup()
+
+df_region
+```
+
+* Test on opening new store in CS (Central Singapore)
+
+Among the 5977 CS customers in the representative dataset, 2.8% of them churned in the past 30 days. Our test would be, open a new branch in CS and wait for another month. We then check precentage of people churning among the left 5808 people. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate.
+
+Result assumption: we assume that with opening one more store, the churn rate for CS resident would go down by 15%.
+
+
+```{r}
+df_occupation <- representative %>%
+  group_by(occupation) %>%
+  summarize(count = n(),
+            leaving = sum(churn == 'yes'),
+            remaining = count - leaving,
+            churn_rate = sum(churn == 'yes') / count) %>%
+  arrange(desc(churn_rate)) %>% 
+  ungroup()
+  
+
+df_occupation
+```
+
+* Test on create customized planning for students and professionals. 
+
+Test process would be to send promotional email to students and professionals about new customized plans, and get the number of people actually accept and switch plans. Wait another 4 months to see churn rate among them. The reason to wait 4 months is people tend to need more time to adapt to new plan and figure out whether they want to stay. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate for students and professionals respectively.
+
+Result assumption: we assume that with marketing customized plans, the churn rate for students and professionals would go down by 15% respectively.
+
+
+**3. Usage trend**
+
+Usage trend is the direct result from customer usage, we may recommend coming up with incentives in changing customer usage to decrease churning.
+
+* Change in revenue
+
+OR of variable 'changer' is about 1.03, which makes it less important driver in churn rate. Besides, as revenue is a mixed and comprehensive result of many influencing factor, such as pricing and actual costomer usage. We have no actionable recommendation to directly change revenue trend.
+
+* Change in minutes used
+
+As changem is direclty related to mou, which is monthly minutes usage. We have little interest in encouraging our cusotmers to call less, thus, we prefer to find incentives from other perspectives.
+
+
+**4. Customer Action**
+
+* Mean number of calls to customer care (custcare)
+
+Custcare is not statistically significant in predicting churning, we don't think it as a main driver in churn rate, hence no actions recommended.
+
+* Number of calls to the retention center (retcalls)
+
+OR of rectcalls is about 1.23, which means the more customer calls retention center, the odds of customer churning will increase. We can come up with ways in improving our service, which will result in them calling less. Action would be same as opening a new store in CS to provide customer with more accessible help.
+
+5. Quality 
+
+* Mean number of dropped voice calls (dropvce)
+
+Dropped voice calls are mainly because of poor signals. We can invest more in infrastructure, such as building cellular towers to reduce the areas of dead zone.
+
+### Question 4 - Quantify the impact on churn probability
+
+1. Overage - the reduction on average churn probability if we can limit overage to current median value;
+
+```{r}
+# use model without standard deviations for prediction
+logit_model <- glm(churn == "yes" ~ changer+changem+mou_log+overage+roam+
+                     conference+months+uniqsubs+retcalls+dropvce+eqpdays+
+                     refurb+highcreditr+mcycle+travel+region+occupation+revenue, 
+                   data = entire_train, family = "binomial")
+
+## adjust to actual churn rate of 2%
+adjust_prob <- function(pred_prob){
+  probs_adj <- pred_prob / (pred_prob + (1 - pred_prob)*0.98/0.02)
+  probs_adj
+}
+
+pred_prob_base <- predict(logit_model, newdata = representative, 
+                     type = "response") %>% adjust_prob()
+
+baseline <- mean(pred_prob_base)
+
+# we target to reduce below median overage without incurring substantial rise in cost
+target_usage <- median(representative$overage)
+representative_overage <- representative %>% 
+  mutate(overage = ifelse(overage > target_usage, target_usage, overage))
+pred_overage <- predict(logit_model, newdata = representative_overage, type = "response") %>% 
+  adjust_prob()
+
+overage_churn <- mean(pred_overage)
+
+```
+
+The baseline churn rate is `r format_nr(baseline,perc = T)`. If we can manage to reduce overage below 31 minutes, which is the current median overage time, we can reduce the average churn rate to `r format_nr(overage_churn, perc = T)`. 
+
+2. Opening new store in Central Singapore
+
+Since opening new store takes time and we assume the test result is available after 1 month, we use the actual churn rate of representative data as baseline instead of predicted values. Same logic extends with student/professional test. 
+
+```{r}
+ave_churn <- mean(representative$churn == "yes")
+ave_churn_cs <- (df_region$leaving[1]*0.85 + sum(df_region$leaving[2:5]))/nrow(representative) # assuming that the churn rate of CS customers would drop by 85% while the rest remain unchanged
+```
+
+If the incentive works out, we expect to see the average churn rate to be dropped to `r format_nr(ave_churn_cs, perc = T)`. 
+
+3. Offering new plans to students and professionals
+
+```{r}
+ave_churn_occ <- (sum(df_region$leaving[1:2]) *0.85 + sum(df_region$leaving[3:5]))/nrow(representative)
+
+```
+
+If the incentive works out, we expect to see the average churn rate to be dropped to `r format_nr(ave_churn_occ, perc = T)`. 
+
+4. Building new celluar towers to reduce drop rate
+
+```{r}
+target_dropvce <- median(representative$dropvce)
+
+representative_dropvce <- representative %>% 
+  mutate(dropvce = ifelse(dropvce > target_dropvce, target_dropvce, dropvce))
+
+pred_dropvce <- predict(logit_model, newdata = representative_dropvce, type = "response") %>% 
+  adjust_prob()
+
+ave_churn_dropvce <- mean(pred_dropvce)
+
+```
+
+If we can manage to reduce the dropped voice call rate to 2%, the expected average churn rate can be reduced to `r format_nr(ave_churn_dropvce, perc = T)`.
+
+
+### Question 5 - Customer Target
+
+1. Overage - For overage related action, we aim to focus on the customers whose overage exceeds 31 minutes, which is the current median overage value in representative customers. The reason why we don't want to use this strategy on all customers are multifold. First, overage is usually priced at higher rate, which means higher revenue. Second, if we manage to eliminate overage altogether, it's usually accompanied with soaring in data usage and substantially higher maintenance cost. After weighing the cost and benefits, we conclude that it's better to reduce overage rather than eliminate it. 
+
+2. Open new store in CS
+
+With a new store opening in CS, customers in CS are automatically targeted. 
+
+3. Promote customized plans for students and professionals
+
+Students and professionals are targeted respectively.
+
+4. Building new celluar towers to reduce drop rate
+
+The customer we target to eliminate drop voice calls are whose average dropped calls number is larger than  `r target_dropvce`.
+
+
+### Question 6 - Evaluate the economics
+
+To evaluate the economic impact on 5-year profitability, we made following assumptions for customer lifetime value calculation. 
+
+1. Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests and we assume a cost rate of 40%;
+
+2. Annual Discount Rate - we assume it to be 12%, which is a reasonable assumption for a company's annual rate of return;
+
+3. Revenue arrives at the end of each month;
+
+4. Customers cancel their plans at midst of an month, which isn't effective til the end of the month. 
+
+##### Profitability Evaluation of Overage
+
+```{r}
+# initial setup for CLV calculation
+n <- 5 * 12
+discount <- 0.12
+discount_period <- c(1:n)
+
+revenue <- rep(mean(representative$revenue), n)
+fixed_cost <- rep(8, n)
+initial_variable <- 0.4
+
+monthly_discount <- (1 + discount)^(1/12) - 1
+
+
+# define clv calculation function
+cal_clv <- function(churn_rate, cost_rate){
+  total_cost <- fixed_cost + cost_rate * revenue
+  profits <- revenue - total_cost
+  
+  remain_customer <- rep(1,n)
+  for (i in 1:(length(remain_customer)-1)){
+    remain_customer[i+1] <- remain_customer[i] * (1 - churn_rate)
+  }
+  
+  profits_churn <- profits*remain_customer
+  
+  profits_pv <- profits_churn/((1 + monthly_discount)^discount_period)
+  
+  cum_profits <- cumsum(profits_pv)
+  
+  clv <- cum_profits[60]
+}
+
+```
+
+For an average customer, the monthly revenue is expected to be `r format_nr(mean(representative$revenue),'$', dec = 2)`. After reducing the overage to 31 minutes, the average churn rate is expected to be `r format_nr(overage_churn, perc = T)`. However, to accomodate higher data usage, we may expect increase in variable costs as more resources need to be allocated. So in our calculation, we assume the variable cost rate to be 42%, a reasonable rise from our initial assumption of 40%.
+
+```{r}
+base_clv <- cal_clv(baseline, initial_variable)
+overage_clv <- cal_clv(overage_churn, 0.42)
+```
+
+```{r}
+# define function to minimize the difference
+cal_diff <- function(churn_rate, cost_rate){
+  clv <- cal_clv(churn_rate, cost_rate) # clv after incentive
+  diff <- abs(clv - base_clv)
+  return(diff)
+}
+
+optimize_result <- optimize(cal_diff, interval = c(0.4, 0.5), maximum = FALSE, churn_rate = overage_churn) # find the cost rate that will minimize the difference between clv after intervention and baseline clv
+max_cost_rate <- optimize_result$minimum
+
+```
+
+We expect an increase of `r format_nr(overage_clv - base_clv, '$')` in average CLV, based on our assumptions. To be more specific, we can spend up to `r format_nr(max_cost_rate, perc = T)` of revenues as variable cost to allow this strategy. Any cost beyond that is not worthwhile. 
+
+##### Profitability Evaluation of opening store in Central Singapore
+
+At this stage of evaluating economics, we assume both variable cost and fixed cost remain the same. We will then estimate the maximum we can afford in installment cost to allow this strategy. 
+
+```{r}
+cs_clv <- cal_clv(ave_churn_cs,initial_variable)
+
+```
+
+CLV for opening a new store in CS is `r format_nr(cs_clv, '$', dec = 2)`. If we choose to open new store in CS, it is a one-time build up cost, the set-up cost we can afford is just the difference between this CLV and baseline CLV, which is `r format_nr(cs_clv - base_clv, '$', dec = 2)` per customer. 
+
+
+##### Profitability Evaluation of offering new plans to students and professionals
+
+```{r}
+occ_clv <- cal_clv(ave_churn_occ,initial_variable)
+```
+
+CLV for promoting customized plans for students and professionals is `r format_nr(occ_clv, '$', dec = 2)`. 
+
+
+#### Profitability Evaluation of building new celluar towers
+
+```{r}
+drop_clv <- cal_clv(ave_churn_dropvce,0.40)
+```
+
+If we invest more in celluar tower related infrastructures, it is a one-time build up cost, the set-up cost we can afford is the difference between two CLVS. It is `r format_nr(drop_clv - base_clv, '$', dec = 2)`.
+
+#### Profitability Evaluation of offering new equipment plans
+
+
+```{r}
+old_equip <- representative %>% 
+  filter(eqpdays > 700)
+
+# element-wise application
+old_equip$eqpdays <- sapply(representative_equip$eqpdays, function(x) sample(c(0,x), size = 1, prob = c(0.3,0.7)))
+
+representative_equip <- representative %>% 
+  filter(eqpdays <= 700) %>% 
+  rbind(old_equip)
+
+pred_equip <- predict(logit_model, newdata = representative_equip, type = "response") %>% 
+  adjust_prob()
+
+equip_churn <- mean(pred_equip)
+
+equip_clv <- cal_clv(equip_churn, initial_variable)
+
+```
+
+
+
