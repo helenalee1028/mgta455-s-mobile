@@ -193,7 +193,7 @@ plot(result, plots = "coef", custom = FALSE)
 
 ```
 
-```{r}
+```{r message=FALSE}
 coef_table <- result %>% write.coeff(intercept = FALSE) %>%
   format_df(dec = 4) %>% 
   select(label, OR, coefficient, std.error, z.value, p.value) %>%
@@ -219,21 +219,84 @@ coef_table %>%
 
 Key Driver Analysis:
 
-1. overage - statistically speaking, 2 standard deviations increase in overage, equivalent to 
+1. Overage
+
+Statistically speaking, 2 standard deviations increase in overage, equivalent to 
 `r round(2 * sd(entire_train$overage), 2)` minutes, would increase the odds of churning by 92%, keeping everything else constant. This is probably because customers find the current plan unable to satisfy their needs and hence considering switching to other providers. 
 
-2. mou_log - similarly, 2 standard deviations increase in log transformed 'mean monthly minutes of use', which is equivalent to around 18 minutes, would decrease the odds of customer churning by approximately 40%. 
+2. Mou_log 
 
+Similarly, 2 standard deviations increase in log transformed 'mean monthly minutes of use', which is equivalent to around 18 minutes, would decrease the odds of customer churning by approximately 40%. 
+
+3. Occupation
+
+* Retired - statistically speaking, odds of retired customer churning decrease by 82% compared to average customers (occupation|others), keeping everything else constant. This is probably because senior customers tend to have less expectation on mobile service, thus they are less picky. They are also reluctant to accept new things and they won't bother calling to leave S-mobile.
+
+* Student - statistically speaking, odds of student customer churning increase by 89% compared to average customers (occupation|others), keeping everything else constant. This is probably because students have relatively more choices in mobile service and they have less stable financial support, which both make them more likely to churn.
+
+* Professional - statistically speaking, odds of professional customer churning increase by 42% compared to other customers, keeping everything else constant. This is probably because prefessionals are really comfortable in accepting new changes and they have high demand in a good quality mobile service. Once their need is unsatisfied, they tend to churn and switch to other providers.
+
+2. Region
+
+* SW,NE,SE,NW - statistically speaking, odds of churning of customers living in southwest, northeast, southeast, and northwest Singapore decrease by about 35% compared to customers from central Singapore, keeping everything else constant. Central singapore is the main metropolitan region and central business district. Many famous landmarks are located there, such as merlion park, making it the most expensive area in Singapore. Thus, we can assume that residents in central singapore tend to have higher standards on mobile services and would be more likely to switch to something better if their current need is not met.
 
 ### Question 3 - Proactive strategy proposals
 
 Based on drivers analysis, we come up with below actions and incentives for proactive churn management. 
 
-1. Promote plans with larger data usage to customers whose consumption constantly exceed monthly limit;
+1. Customer Usage
+
+* Promote plans with larger data usage to customers whose consumption constantly exceed monthly limit;
+
+2. Customer Characteristics
+
+* Open more stores in central Singapore to increase service level, such as providing help with account, and making changing plan more flexible and easy. This is aimed to reduce the churn rate of customers at Central Singapore;
+
+* Provide customized plans specially for students and professionals to meet their needs. For students plan, include more data and less messaegs. For professionals' plan, provided more data and calls. 
 
 
+```{r}
+df_region <- representative %>%
+  group_by(region) %>%
+  summarize(count = n(),
+            leaving = sum(churn == 'yes'),
+            remaining = count - leaving,
+            churn_perc = sum(churn == 'yes') / count)%>% 
+  ungroup()
+
+df_region
+```
+
+* Test on opening new store in CS (Central Singapore)
+
+Among the 5977 CS customers in the representative dataset, 2.8% of them churned in the past 30 days. Our test would be, open a new branch in CS and wait for another month. We then check precentage of people churning among the left 5808 people. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate.
+
+Result assumption: we assume that with opening one more store, the churn rate for CS resident would go down by 15%.
+
+
+```{r}
+df_occupation <- representative %>%
+  group_by(occupation) %>%
+  summarize(count = n(),
+            leaving = sum(churn == 'yes'),
+            remaining = count - leaving,
+            churn_rate = sum(churn == 'yes') / count) %>%
+  arrange(desc(churn_rate)) %>% 
+  ungroup()
+  
+
+df_occupation
+```
+
+* Test on create customized planning for students and professionals. 
+
+Test process would be to send promotional email to students and professionals about new customized plans, and get the number of people actually accept and switch plans. Wait another 4 months to see churn rate among them. The reason to wait 4 months is people tend to need more time to adapt to new plan and figure out whether they want to stay. Then a hypothesis testing is done to evaluate if there is significant decrease in churning rate for students and professionals respectively.
+
+Result assumption: we assume that with marketing customized plans, the churn rate for students and professionals would go down by 15% respectively.
 
 ### Question 4 - Quantify the impact on churn probability
+
+1. Overage - the reduction on average churn probability if we can limit overage to current median value;
 
 ```{r}
 # use model without standard deviations for prediction
@@ -248,17 +311,13 @@ adjust_prob <- function(pred_prob){
   probs_adj
 }
 
-pred_prob <- predict(logit_model, newdata = representative, 
-                     type = "response")
-pred_prob_adj <- adjust_prob(pred_prob) # adjust to actual level
-baseline <- mean(pred_prob_adj)
+pred_prob_base <- predict(logit_model, newdata = representative, 
+                     type = "response") %>% adjust_prob()
 
-
-pred_prob_adj <- adjust_prob(pred_prob)
-print(paste0("The churn rate without proactive incentive is ", format_nr(mean(pred_prob_adj), perc = T), "."))
+baseline <- mean(pred_prob_base)
 
 # we target to reduce below median overage without incurring substantial rise in cost
-target_usage <- median(entire_train$overage)
+target_usage <- median(representative$overage)
 representative_overage <- representative %>% 
   mutate(overage = ifelse(overage > target_usage, target_usage, overage))
 pred_overage <- predict(logit_model, newdata = representative_overage, type = "response") %>% 
@@ -268,7 +327,7 @@ overage_churn <- mean(pred_overage)
 
 ```
 
-1. The baseline churn rate is `r format_nr(baseline,perc = T)`. If we can manage to reduce overage below 43 minutes, which is the current median overage time, we can reduce the average churn rate to `r format_nr(overage_churn, perc = T)`. The reason why we are not seeking to eliminate overage altogether is that it may incur high maintenance cost to keep up with the increased data flow. For example, if we offer unlimited plans, customers may abuse data usage and S-mobile may need extra capital in infrastructure maintenance to keep up with the increased service request. 
+The baseline churn rate is `r format_nr(baseline,perc = T)`. If we can manage to reduce overage below 31 minutes, which is the current median overage time, we can reduce the average churn rate to `r format_nr(overage_churn, perc = T)`. 
 
 
 ```{r}
@@ -285,7 +344,37 @@ pred_eqpdays <- predict(logit_model, newdata = representative_equip, type = "res
 mean(pred_eqpdays)
 ```
 
+2. Opening new store in Central Singapore
+
+Since opening new store takes time and we assume the test result is available after 1 month, we use the actual churn rate of representative data as baseline instead of predicted values. Same logic extends with student/professional test. 
+
+```{r}
+ave_churn <- mean(representative$churn == "yes")
+ave_churn_cs <- (df_region$leaving[1]*0.85 + sum(df_region$leaving[2:5]))/nrow(representative) # assuming that the churn rate of CS customers would drop by 85% while the rest remain unchanged
+```
+
+If the incentive works out, we expect to see the average churn rate to be dropped to `r format_nr(ave_churn_cs, perc = T)`. 
+
+3. Offering new plans to students and professionals
+
+```{r}
+ave_churn_occ <- (sum(df_region$leaving[1:2]) *0.85 + sum(df_region$leaving[3:5]))/nrow(representative)
+
+```
+
+If the incentive works out, we expect to see the average churn rate to be dropped to `r format_nr(ave_churn_occ, perc = T)`. 
+
 ### Question 5 - Customer Target
+
+1. Overage - For overage related action, we aim to focus on the customers whose overage exceeds 31 minutes, which is the current median overage value in representative customers. The reason why we don't want to use this strategy on all customers are multifold. First, overage is usually priced at higher rate, which means higher revenue. Second, if we manage to eliminate overage altogether, it's usually accompanied with soaring in data usage and substantially higher maintenance cost. After weighing the cost and benefits, we conclude that it's better to reduce overage rather than eliminate it. 
+
+2. Open new store in CS
+
+With a new store opening in CS, customers in CS are automatically targeted. 
+
+3. Promote customized plans for students and professionals
+
+Students and professionals are targeted respectively.
 
 
 ### Question 6 - Evaluate the economics
@@ -299,6 +388,8 @@ To evaluate the economic impact on 5-year profitability, we made following assum
 3. Revenue arrives at the end of each month;
 
 4. Customers cancel their plans at midst of an month, which isn't effective til the end of the month. 
+
+##### Profitability Evaluation of Overage
 
 ```{r}
 # initial setup for CLV calculation
@@ -334,7 +425,7 @@ cal_clv <- function(churn_rate, cost_rate){
 
 ```
 
-For an average customer, the monthly revenue is expected to be `r format_nr(mean(representative$revenue),'$', dec = 2)`. After reducing the overage to 43 minutes, the average churn rate is expected to be `r format_nr(overage_churn, perc = T)`. However, to accomodate higher data usage, we may expect increase in variable costs as more resources need to be allocated. So in our calculation, we assume the variable cost rate to be 42%, a reasonable rise from our initial assumption of 40%.
+For an average customer, the monthly revenue is expected to be `r format_nr(mean(representative$revenue),'$', dec = 2)`. After reducing the overage to 31 minutes, the average churn rate is expected to be `r format_nr(overage_churn, perc = T)`. However, to accomodate higher data usage, we may expect increase in variable costs as more resources need to be allocated. So in our calculation, we assume the variable cost rate to be 42%, a reasonable rise from our initial assumption of 40%.
 
 ```{r}
 base_clv <- cal_clv(baseline, initial_variable)
@@ -354,4 +445,24 @@ max_cost_rate <- optimize_result$minimum
 
 ```
 
-Based on our calculation, we expect an increase of `r format_nr(overage_clv - base_clv, '$')` in average CLV, based on our assumptions. To be more specific, we can spend up to `r format_nr(max_cost_rate, perc = T)` of revenues as variable cost to allow this strategy. Any cost beyond that is not worthwhile. 
+We expect an increase of `r format_nr(overage_clv - base_clv, '$')` in average CLV, based on our assumptions. To be more specific, we can spend up to `r format_nr(max_cost_rate, perc = T)` of revenues as variable cost to allow this strategy. Any cost beyond that is not worthwhile. 
+
+##### Profitability Evaluation of opening store in Central Singapore
+
+At this stage of evaluating economics, we assume both variable cost and fixed cost remain the same. We will then estimate the maximum we can afford in installment cost to allow this strategy. 
+
+```{r}
+cs_clv <- cal_clv(ave_churn_cs,initial_variable)
+
+```
+
+CLV for opening a new store in CS is `r format_nr(cs_clv, '$', dec = 2)`. If we choose to open new store in CS, it is a one-time build up cost, the set-up cost we can afford is just the difference between this CLV and baseline CLV, which is `r format_nr(cs_clv - base_clv, '$', dec = 2)` per customer. 
+
+
+##### Profitability Evaluation of offering new plans to students and professionals
+
+```{r}
+occ_clv <- cal_clv(ave_churn_occ,initial_variable)
+```
+
+CLV for promoting customized plans for students and professionals is `r format_nr(occ_clv, '$', dec = 2)`. 
