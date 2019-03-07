@@ -516,6 +516,3 @@ PV_exp_profit <- exp_profit / (1 + monthly_discount_rate)^(time)
 CLV <- cumsum(PV_exp_profit)
 ```
 
-```{r}
-eqpdays_clv <- cal_clv(representative_eqpdays$eqpdays_churn, 0.42)
-```
