@@ -422,6 +422,41 @@ representative_eqpdays = rbind(high_r,medium_r,low_r)
 table(representative_eqpdays$category)
 ```
 
+To evaluate the economic impact on 5-year profitability, we made following assumptions for customer lifetime value calculation. 
+
+1. Cost - there are 2 main components for costs, fixed and variable. The former is mainly for infrastructure and general admin maintenance and estimated to be $8 for each customer each month. The latter is variable cost which varies with service requests and we assume a cost rate of 40%;
+
+3. Revenue arrives at the end of each month;
+
+4. Customers cancel their plans at midst of an month, which isn't effective til the end of the month. 
+
+```{r}
+n <- 5 * 12
+
+fixed_cost <- rep(8, n)
+initial_variable <- 0.4
+
+revenue <- c(rep(mean(representative_eqpdays$revenue)+25, 3*12),rep(mean(representative_eqpdays$revenue),2*12))
+
+annual_discount_rate <- 0.12
+monthly_discount_rate <- (1 + annual_discount_rate)^(1/12) - 1
+annual_churn <- mean(representative_eqpdays$eqpdays_churn)
+monthly_churn <- 1 - (1 - annual_churn)^(1/12)
+
+nr_years <- 5
+
+time <- 1:(nr_years * 12)
+
+initial_cost = 300
+profit <- revenues - revenues*initial_variable - fixed_cost
+active <- (1 - monthly_churn)^(time - 1)
+exp_profit <- active * profit
+PV_exp_profit <- exp_profit / (1 + monthly_discount_rate)^(time)
+PV_exp_profit[1] = PV_exp_profit[1] - initial_cost
+CLV <- cumsum(PV_exp_profit)
+```
+
+
 ```{r}
 eqpdays_clv <- cal_clv(representative_eqpdays$eqpdays_churn, 0.42)
 ```
